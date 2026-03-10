@@ -21,6 +21,21 @@ export function useBookingApi() {
       setLoading(false);
     }
   };
+  
+  const fetchBookings = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getBookings();
+      setResponse(res);
+      return res;
+    } catch (err) {
+      setError(err);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  return { submitBooking, loading, error, response };
+  return { submitBooking, fetchBookings, loading, error, response };
 }

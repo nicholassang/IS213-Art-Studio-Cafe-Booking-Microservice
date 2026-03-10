@@ -1,20 +1,25 @@
-import { createBrowserRouter } from "react-router-dom"
+import { createBrowserRouter, Navigate } from "react-router-dom";
+import HomePage from "../pages/HomePage/HomePage.jsx";
+import LoginPage from "../pages/LoginPage/LoginPage.jsx";
+import RegisterPage from "../pages/RegisterPage/RegisterPage.jsx";
+import BookingPage from "../pages/BookingPage/BookingPage.jsx";
 
-import HomePage from "../pages/HomePage/HomePage"
-import { BookingPage } from "../pages/BookingPage/BookingPage"
-import { LoginPage } from "../pages/LoginPage/LoginPage"
+const Protected = ({ user, children }) => {
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
 
-export const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <HomePage />
-  },
-  {
-    path: "/booking",
-    element: <BookingPage />
-  },
-  {
-    path: "/login",
-    element: <LoginPage />
-  }
-])
+export const router = (user) =>
+  createBrowserRouter([
+    { path: "/", element: <HomePage /> },
+    { path: "/login", element: <LoginPage /> },
+    { path: "/register", element: <RegisterPage /> },
+    {
+      path: "/booking",
+      element: (
+        <Protected user={user}>
+          <BookingPage />
+        </Protected>
+      ),
+    },
+  ]);
