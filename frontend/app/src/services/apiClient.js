@@ -1,23 +1,11 @@
 import axios from "axios";
 
 const apiClient = axios.create({
-  baseURL: "http://127.0.0.1:8000/", 
-  headers: {
-    "Content-Type": "application/json",
-  },
+  // use the same host name the browser actually uses, not 127.0.0.1
+  // avoiding a different hostname keeps the session cookie in the "same-site" scope
+  baseURL: "http://localhost:8000",
   withCredentials: true,
 });
-
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("authToken"); 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 apiClient.interceptors.response.use(
   (response) => response,

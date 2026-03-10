@@ -1,0 +1,57 @@
+services:
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - COMPOSITE_URL=http://composite-service:8000
+    depends_on:
+      - composite-service
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: auth-service
+    # expose a port only for debugging; composite and gateway use the internal network
+    ports:
+      - "8005:8000"
+
+  composite-service:
+    build: ./composite-service
+    container_name: composite-service
+    environment:
+      - BOOKING_URL=http://booking-service:8000
+      - AUTH_URL=http://auth-service:8000
+      - CALENDAR_URL=http://calendar-service:8000
+      - ARTSUPPLY_URL=http://art-supply-service:8000
+      - FOOD_URL=http://food-order-service:8000
+    depends_on:
+      - auth-service
+      - booking-service
+      - calendar-service
+      - art-supply-service
+      - food-order-service
+
+  booking-service:
+    build: ./services/booking-service
+    container_name: booking-service
+    ports:
+      - "8001:8000"
+
+  calendar-service:
+    build: ./services/calendar-service
+    container_name: calendar-service
+    ports:
+      - "8002:8000"
+
+  art-supply-service:
+    build: ./services/art-supply-service
+    container_name: art-supply-service
+    ports:
+      - "8003:8000"
+
+  food-order-service:
+    build: ./services/food-order-service
+    container_name: food-order-service
+    ports:
+      - "8004:8000"

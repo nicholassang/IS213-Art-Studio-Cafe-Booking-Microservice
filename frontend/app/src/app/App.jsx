@@ -1,9 +1,11 @@
-import './App.css'
-import { RouterProvider } from "react-router-dom"
-import { router } from "./router"
+import { RouterProvider } from "react-router-dom";
+import { router } from "./router.jsx";
+import { useAuth } from "../features/auth/AuthContext";
 
-function App() {
-  return <RouterProvider router={router} />
+export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) return <div>Loading...</div>; 
+
+  return <RouterProvider router={router(user)} />;
 }
-
-export default App
