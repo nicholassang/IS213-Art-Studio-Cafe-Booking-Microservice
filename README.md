@@ -8,6 +8,10 @@ FastAPI backend services orchestrated with Docker Compose.
 - Remember to branch from main, and only merge with main if there's no broken functionality or merge conflicts
 - Follow how the frontend make calls to the backend, and how it flows into its taomic microservices
 - Currently, API Gateway and Composite has the same API endpoints (we can add more composites if it makes sense)
+- There is no DB yet, all data store in-memory, meaning that they will be wiped whenever you refresh
+- Easy Log In:
+Username: test
+Password: test
 
 ## Project Structure
 
