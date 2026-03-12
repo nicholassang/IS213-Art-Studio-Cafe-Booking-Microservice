@@ -2,9 +2,9 @@
 __pycache__/
 *.pyc
 *.pyo
-*.env
-*.venv/
-*.pytest_cache/
+**/.env
+.venv/
+.pytest_cache/
 *.log
 *.sqlite3
 
@@ -21,8 +21,10 @@ dist/
 Thumbs.db
 
 # Docker
-*.dockerignore
 docker-compose.override.yml
 
 # Temp files
 *.tmp
+
+# Keep env templates
+!**/.env.example
