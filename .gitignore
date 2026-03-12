@@ -5,23 +5,31 @@ __pycache__/
 **/.env
 .venv/
 .pytest_cache/
-*.log
+*.log*
 *.sqlite3
 
 # Node / Frontend
 node_modules/
 dist/
-.env.local
-.env.*.local
+dist-ssr/
+logs/
+**/.env.local
+**/.env.*.local
 
 # IDE / OS
 .vscode/
+!**.vscode/extensions.json
 .idea/
-.DS_Store
-Thumbs.db
+**/.DS_Store
+**/Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Docker
-docker-compose.override.yml
+**/docker-compose.override.yml
 
 # Temp files
 *.tmp
