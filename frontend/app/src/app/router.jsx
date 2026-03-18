@@ -4,7 +4,7 @@ import LoginPage from "../pages/LoginPage/LoginPage.jsx";
 import RegisterPage from "../pages/RegisterPage/RegisterPage.jsx";
 import ActivityList from "../pages/ActivityPage/ActivityList.jsx";
 import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
-
+import FoodMenu from "../pages/FoodPage/FoodList.jsx";
 
 // Protected route wrapper
 const Protected = ({ user, children }) => {
@@ -38,4 +38,7 @@ export const router = (user) =>
         </Protected>
       ),
     },
+
+
+    {path: "/menu",element: <FoodMenu />,},
 ]);
