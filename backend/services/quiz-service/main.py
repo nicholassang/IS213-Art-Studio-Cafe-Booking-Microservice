@@ -13,16 +13,13 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-# ---------------------------------------------------------------------------
 # Supabase client
-# ---------------------------------------------------------------------------
 SUPABASE_URL: str = os.environ["SUPABASE_URL"]
 SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------------------------------------------------------------------
+
 # RabbitMQ
-# ---------------------------------------------------------------------------
 RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
 QUIZ_EXCHANGE: str = os.getenv("QUIZ_EXCHANGE", "quiz_events")
 
@@ -49,16 +46,13 @@ async def lifespan(app: FastAPI):
         await _rabbitmq_connection.close()
 
 
-# ---------------------------------------------------------------------------
 # Predefined question bank
 # Each question has a category tag used by the Recommendation service
 # to infer user preferences.
-# ---------------------------------------------------------------------------
+
 QUESTION_BANK: list[dict] = [
 
-    # ------------------------------------------------------------------ #
-    #  CATEGORY 1 — Food & Drink Preferences                              #
-    # ------------------------------------------------------------------ #
+    #  CATEGORY 1 — Food & Drink Preferences                              
     {
         "question_id": "fd1",
         "text": "Which type of food would you most enjoy at a café?",
@@ -115,9 +109,7 @@ QUESTION_BANK: list[dict] = [
         ],
     },
 
-    # ------------------------------------------------------------------ #
-    #  CATEGORY 2 — Activity Preferences                                  #
-    # ------------------------------------------------------------------ #
+    #  CATEGORY 2 — Activity Preferences                                  
     {
         "question_id": "ap1",
         "text": "Which type of activity would you most enjoy at a café?",
@@ -174,9 +166,7 @@ QUESTION_BANK: list[dict] = [
         ],
     },
 
-    # ------------------------------------------------------------------ #
-    #  CATEGORY 3 — Ambience & Vibe                                       #
-    # ------------------------------------------------------------------ #
+    #  CATEGORY 3 — Ambience & Vibe                                       
     {
         "question_id": "av1",
         "text": "What kind of atmosphere do you prefer in a café?",
@@ -233,9 +223,7 @@ QUESTION_BANK: list[dict] = [
         ],
     },
 
-    # ------------------------------------------------------------------ #
-    #  CATEGORY 4 — Visit Style & Occasion                                #
-    # ------------------------------------------------------------------ #
+    #  CATEGORY 4 — Visit Style & Occasion                                
     {
         "question_id": "vs1",
         "text": "How do you usually visit a café?",
@@ -293,9 +281,7 @@ QUESTION_BANK: list[dict] = [
     },
 ]
 
-# ---------------------------------------------------------------------------
 # FastAPI app
-# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Quiz Service",
     description="Serves predefined preference questions and stores user answers for the Recommendation service.",
@@ -304,31 +290,33 @@ app = FastAPI(
 )
 
 
-# ---------------------------------------------------------------------------
 # Pydantic schemas
-# ---------------------------------------------------------------------------
+
+# represent a single answer choice in a qn
 class OptionOut(BaseModel):
+    # ID to validate answer choice
     option_id: str
+    # corresponding text on frontend for that ID
     text: str
 
-
+# represents one full question
 class QuestionOut(BaseModel):
     question_id: str
     text: str
     category: str
     options: list[OptionOut]
 
-
+# represent answer sent by user for one question
 class AnswerIn(BaseModel):
     question_id: str
     selected_option_id: str
 
-
+# full request body for POST/quiz/submit endpoint
 class QuizSubmission(BaseModel):
     user_id: str
     answers: list[AnswerIn]
 
-
+# response body returned after a successful quiz submission
 class QuizSubmissionResponse(BaseModel):
     submission_id: str
     user_id: str
@@ -336,9 +324,7 @@ class QuizSubmissionResponse(BaseModel):
     answer_count: int
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -377,21 +363,45 @@ def _validate_answers(answers: list[AnswerIn]) -> None:
             )
 
 
-# ---------------------------------------------------------------------------
+def _find_question_index(question_id: str) -> Optional[int]:
+    for i, q in enumerate(QUESTION_BANK):
+        if q["question_id"] == question_id:
+            return i
+    return None
+
+
 # Routes
-# ---------------------------------------------------------------------------
+
 @app.get("/health", tags=["Health"])
 def health_check():
     return {"status": "ok", "service": "quiz"}
 
 
 @app.get("/quiz/questions", response_model=list[QuestionOut], tags=["Quiz"])
-def get_questions():
+def get_questions(category: Optional[str] = None):
     """
-    Return the full predefined question bank.
-    The frontend renders these questions for the user to answer.
+    Return the predefined question bank, optionally filtered by category.
     """
+    if category:
+        return [q for q in QUESTION_BANK if q["category"] == category]
     return QUESTION_BANK
+
+
+@app.get("/quiz/questions/{question_id}", response_model=QuestionOut, tags=["Quiz"])
+def get_question(question_id: str):
+    idx = _find_question_index(question_id)
+    if idx is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found.")
+    return QUESTION_BANK[idx]
+
+
+@app.delete("/quiz/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Quiz"])
+def delete_question(question_id: str):
+    idx = _find_question_index(question_id)
+    if idx is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found.")
+    QUESTION_BANK.pop(idx)
+    return
 
 
 @app.post(
@@ -444,7 +454,68 @@ async def submit_answers(payload: QuizSubmission):
     }
 
 
-@app.get("/quiz/submissions/{user_id}", tags=["Quiz"])
+@app.get("/quiz/submissions", tags=["Quiz"])
+def list_submissions(user_id: Optional[str] = None):
+    query = supabase.table("quiz_submissions").select("*")
+    if user_id:
+        query = query.eq("user_id", user_id)
+    result = query.order("submitted_at", desc=True).execute()
+    return result.data or []
+
+
+@app.get("/quiz/submissions/{submission_id}", tags=["Quiz"])
+def get_submission(submission_id: str):
+    result = (
+        supabase.table("quiz_submissions")
+        .select("*")
+        .eq("submission_id", submission_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No submission found.")
+    return result.data[0]
+
+
+@app.put("/quiz/submissions/{submission_id}", response_model=QuizSubmissionResponse, tags=["Quiz"])
+def update_submission(submission_id: str, payload: QuizSubmission):
+    _validate_answers(payload.answers)
+    submitted_at = _now_iso()
+    update_data = {
+        "user_id": payload.user_id,
+        "answers": [a.model_dump() for a in payload.answers],
+        "submitted_at": submitted_at,
+    }
+    result = (
+        supabase.table("quiz_submissions")
+        .update(update_data)
+        .eq("submission_id", submission_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No submission found to update.")
+    return {
+        "submission_id": submission_id,
+        "user_id": payload.user_id,
+        "submitted_at": submitted_at,
+        "answer_count": len(payload.answers),
+    }
+
+
+@app.delete("/quiz/submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Quiz"])
+def delete_submission(submission_id: str):
+    result = (
+        supabase.table("quiz_submissions")
+        .delete()
+        .eq("submission_id", submission_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No submission found to delete.")
+    return
+
+
+@app.get("/quiz/submissions/user/{user_id}", tags=["Quiz"])
 def get_user_submission(user_id: str):
     """
     Retrieve the most recent quiz submission for a given user.
