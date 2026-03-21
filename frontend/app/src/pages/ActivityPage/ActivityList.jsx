@@ -150,13 +150,29 @@ const styles = `
 export default function ActivityList() {
   const [activities, setActivities] = useState([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    const startTime = Date.now();
+
     fetch("http://localhost:8000/getAllActivities")
       .then(res => res.json())
-      .then(data => setActivities(data.activities || []))
-      .catch(err => console.error("Error fetching activities:", err));
+      .then(data => {
+        const elapsed = Date.now() - startTime;
+
+        // 400ms loading
+        const delay = Math.max(400 - elapsed, 0);
+
+        setTimeout(() => {
+          setActivities(data.activities || []);
+          setLoading(false);
+        }, delay);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
   }, []);
 
   const filteredActivities = activities.filter(activity =>
@@ -187,8 +203,10 @@ export default function ActivityList() {
 
         {/* Grid */}
         <div className="list-grid">
-          {filteredActivities.length === 0 ? (
-            <p className="list-empty">No activities found 😢</p>
+          {loading ? (
+            <p>Loading experience… 🎨</p>
+          ) : filteredActivities.length === 0 ? (
+            <p>No activities found 😢</p>
           ) : (
             filteredActivities.map(activity => (
               <div
@@ -206,7 +224,6 @@ export default function ActivityList() {
                 <div className="list-card-body">
                   <h3 className="list-card-name">{activity.name}</h3>
 
-                  {/* NEW INFO */}
                   <p style={{ fontSize: "0.85rem", color: "#7c6f5e" }}>
                     {activity.category} • {activity.duration}
                   </p>
