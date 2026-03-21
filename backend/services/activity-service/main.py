@@ -54,3 +54,5 @@ def get_by_category(category: str):
         .execute()
 
     return {"activities": response.data}
+
+#test
