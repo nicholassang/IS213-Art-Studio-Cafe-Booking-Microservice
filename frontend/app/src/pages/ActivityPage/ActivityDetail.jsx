@@ -253,29 +253,15 @@ export default function ActivityDetail() {
                 </span>
               </div>
             </div>
-
-            <div className="detail-meta-item">
-              <span className="detail-meta-label">Level</span>
-              <span className="detail-meta-value">{activity.level}</span>
+            <div className="detail-price-row">
+              <span className="detail-price-currency">$</span>
+              <span className="detail-price-amount">{activity.price}</span>
+              <span className="detail-price-note">per person</span>
             </div>
-
-            <div className="detail-meta-item">
-              <span className="detail-meta-label">Rating</span>
-              <span className="detail-meta-value">
-                ⭐ {activity.rating} ({activity.reviews})
-              </span>
-            </div>
+            <button className="detail-cta">
+              Book Now
+            </button>
           </div>
-
-          <div className="detail-price-row">
-            <span className="detail-price-currency">$</span>
-            <span className="detail-price-amount">{activity.price}</span>
-            <span className="detail-price-note">per person</span>
-          </div>
-
-          <button className="detail-cta">
-            Book Now
-          </button>
           
           {/* What to Expect */}
           <h3>What to Expect</h3>
