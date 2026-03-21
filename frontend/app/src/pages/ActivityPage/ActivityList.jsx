@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
- 
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
  
@@ -146,33 +146,33 @@ const styles = `
     color: #fff;
   }
 `;
- 
+
 export default function ActivityList() {
   const [activities, setActivities] = useState([]);
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
- 
+
   useEffect(() => {
     fetch("http://localhost:8000/getAllActivities")
       .then(res => res.json())
       .then(data => setActivities(data.activities || []))
       .catch(err => console.error("Error fetching activities:", err));
   }, []);
- 
+
   const filteredActivities = activities.filter(activity =>
     activity.name.toLowerCase().includes(search.toLowerCase())
   );
- 
+
   return (
     <>
       <style>{styles}</style>
       <div className="list-root">
- 
+
         <div className="list-header">
           <span className="list-eyebrow">Explore &amp; Create</span>
           <h1 className="list-title">Art Activities 🎨</h1>
         </div>
- 
+
         {/* Search Bar */}
         <div className="list-search-wrap">
           <span className="list-search-icon">⌕</span>
@@ -184,7 +184,7 @@ export default function ActivityList() {
             className="list-search"
           />
         </div>
- 
+
         {/* Grid */}
         <div className="list-grid">
           {filteredActivities.length === 0 ? (
@@ -205,6 +205,16 @@ export default function ActivityList() {
                 </div>
                 <div className="list-card-body">
                   <h3 className="list-card-name">{activity.name}</h3>
+
+                  {/* NEW INFO */}
+                  <p style={{ fontSize: "0.85rem", color: "#7c6f5e" }}>
+                    {activity.category} • {activity.duration}
+                  </p>
+
+                  <p style={{ fontSize: "0.8rem", color: "#aaa098" }}>
+                    ⭐ {activity.rating} ({activity.reviews})
+                  </p>
+
                   <div className="list-card-footer">
                     <span className="list-card-price">${activity.price}</span>
                     <span className="list-card-arrow">View →</span>
@@ -214,9 +224,7 @@ export default function ActivityList() {
             ))
           )}
         </div>
- 
       </div>
     </>
   );
 }
- 

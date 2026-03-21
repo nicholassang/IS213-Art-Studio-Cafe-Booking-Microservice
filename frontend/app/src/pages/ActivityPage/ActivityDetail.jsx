@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
- 
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
  
@@ -186,35 +186,35 @@ const styles = `
     letter-spacing: 0.06em;
   }
 `;
- 
+
 export default function ActivityDetail() {
   const { id } = useParams();
   const [activity, setActivity] = useState(null);
- 
+
   useEffect(() => {
     fetch(`http://localhost:8000/activities/${id}`)
       .then(res => res.json())
       .then(data => setActivity(data));
   }, [id]);
- 
+
   if (!activity) return (
     <>
       <style>{styles}</style>
       <div className="detail-loading">Loading experience…</div>
     </>
   );
- 
+
   return (
     <>
       <style>{styles}</style>
       <div className="detail-root">
- 
+
         <button className="detail-back" onClick={() => window.history.back()}>
           ← Back
         </button>
- 
+
         <div className="detail-grid">
- 
+
           {/* Image */}
           <div className="detail-image-wrap">
             <img
@@ -224,39 +224,85 @@ export default function ActivityDetail() {
             />
             <span className="detail-image-caption">{activity.name}</span>
           </div>
- 
+
           {/* Details */}
           <div className="detail-info">
- 
+
             <span className="detail-badge">{activity.category}</span>
- 
+
             <h1 className="detail-title">{activity.name}</h1>
- 
+
             <div className="detail-divider" />
- 
+
             <p className="detail-desc">{activity.description}</p>
- 
             <div className="detail-meta">
               <div className="detail-meta-item">
                 <span className="detail-meta-label">Duration</span>
                 <span className="detail-meta-value">{activity.duration}</span>
               </div>
+
+              <div className="detail-meta-item">
+                <span className="detail-meta-label">Level</span>
+                <span className="detail-meta-value">{activity.level}</span>
+              </div>
+
+              <div className="detail-meta-item">
+                <span className="detail-meta-label">Rating</span>
+                <span className="detail-meta-value">
+                  ⭐ {activity.rating} ({activity.reviews})
+                </span>
+              </div>
             </div>
- 
-            <div className="detail-price-row">
-              <span className="detail-price-currency">$</span>
-              <span className="detail-price-amount">{activity.price}</span>
-              <span className="detail-price-note">per person</span>
+
+            <div className="detail-meta-item">
+              <span className="detail-meta-label">Level</span>
+              <span className="detail-meta-value">{activity.level}</span>
             </div>
- 
-            <button className="detail-cta">
-              Book Now
-            </button>
- 
+
+            <div className="detail-meta-item">
+              <span className="detail-meta-label">Rating</span>
+              <span className="detail-meta-value">
+                ⭐ {activity.rating} ({activity.reviews})
+              </span>
+            </div>
           </div>
+
+          <div className="detail-price-row">
+            <span className="detail-price-currency">$</span>
+            <span className="detail-price-amount">{activity.price}</span>
+            <span className="detail-price-note">per person</span>
+          </div>
+
+          <button className="detail-cta">
+            Book Now
+          </button>
+          
+          {/* What to Expect */}
+          <h3>What to Expect</h3>
+          <ul>
+            {activity.what_to_expect.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+
+          {/* Session Flow */}
+          <h3>Session Flow</h3>
+          <ul>
+            {activity.session_flow.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+
+          {/* After Session */}
+          <h3>After Session</h3>
+          <ul>
+            {activity.after_session.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+
         </div>
       </div>
     </>
   );
 }
- 
