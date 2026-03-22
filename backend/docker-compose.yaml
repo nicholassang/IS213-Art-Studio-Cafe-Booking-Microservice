@@ -69,9 +69,9 @@ services:
     container_name: ai-recommendation-wrapper
     ports:
       - "8006:8000"
+    env_file:
+      - ./wrappers/ai-recommendation-wrapper/.env
     environment:
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - QUIZ_EXCHANGE=quiz_events
       - QUIZ_QUEUE=ai_recommendation_queue
