@@ -5,7 +5,13 @@ from models import AuthModel
 
 app = FastAPI()
 
-app.add_middleware(SessionMiddleware, secret_key="supersecret123")
+# Allow session cookie over HTTP (local dev) and cross-site requests
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="supersecret123",
+    https_only=False,
+    same_site="none",
+)
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 

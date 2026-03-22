@@ -4,6 +4,9 @@ import LoginPage from "../pages/LoginPage/LoginPage.jsx";
 import RegisterPage from "../pages/RegisterPage/RegisterPage.jsx";
 import ActivityList from "../pages/ActivityPage/ActivityList.jsx";
 import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
+import FoodMenu from "../pages/FoodPage/FoodList.jsx";
+import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
+import Cart from "../pages/FoodPage/Cart.jsx";
 
 
 // Protected route wrapper
@@ -27,24 +30,15 @@ export const router = (user) =>
       path: "/activity/:id",
       element: <ActivityDetail />,
     },
-    // 🎨 Activity Catalogue (PROTECTED)
-    // {
-    //   path: "/activities",
-    //   element: (
-    //     <Protected user={user}>
-    //       <ActivityList />
-    //     </Protected>
-    //   ),
-    // },
-
-    // // Activity Details (PROTECTED)
-    // {
-    //   path: "/activity/:id",
-    //   element: (
-    //     <Protected user={user}>
-    //       <ActivityDetail />
-    //     </Protected>
-    //   ),
-    // },
-  ]);
+    
+    { path: "/menu",
+      element: <FoodMenu />,
+    },
+    { path: "/menu/:id", 
+      element: <FoodDetail /> 
+    },
+    { path: "/cart", 
+      element: <Cart /> 
+    },
+]);
 
