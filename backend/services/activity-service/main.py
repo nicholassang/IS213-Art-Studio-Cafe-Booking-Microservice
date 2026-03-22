@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 
 # Initialize Supabase client
@@ -11,7 +10,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
-app.mount("/images", StaticFiles(directory="images"), name="images")
+
 # Allow frontend later to access this service
 app.add_middleware(
     CORSMiddleware,
