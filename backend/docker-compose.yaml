@@ -1,13 +1,4 @@
 services:
-  api-gateway:
-    build: ./api-gateway
-    container_name: api-gateway
-    ports:
-      - "8000:8000"
-    environment:
-      - COMPOSITE_URL=http://composite-service:8000
-    depends_on:
-      - composite-service
 
   user-service:
     build: ./services/user-service
@@ -19,6 +10,8 @@ services:
   composite-service:
     build: ./composite-service/make-booking-composite-service
     container_name: make-booking-composite-service
+    ports:
+      - "8003:8000"
     environment:
       - AUTH_URL=http://auth-service:8000
       - AI_RECOMMENDATION_URL=http://ai-recommendation-wrapper:8000
@@ -27,6 +20,9 @@ services:
       - user-service
       - ai-recommendation-wrapper
       - payment-wrapper
+      - menu-service
+      - foodorder-service
+      - activity-service
 
   ai-recommendation-wrapper:
     build: ./wrappers/ai-recommendation-wrapper
@@ -73,17 +69,34 @@ services:
 
   activity-service:
     build:
-      context: .
-      dockerfile: ./services/activity-service/Dockerfile
+      context: ./services/activity-service
+      dockerfile: Dockerfile
     container_name: activity-service
     ports:
      - "8011:8000"
 
   quiz-service:
     build:
-      context: .
-      dockerfile: ./services/quiz-service/Dockerfile
+      context: ./services/quiz-service
+      dockerfile: Dockerfile
     container_name: quiz-service
     ports:
      - "8012:8000"
+
+  menu-service:
+    build:
+      context: ./services/menu-service
+      dockerfile: Dockerfile
+    container_name: menu-service
+    ports:
+     - "8013:8000"
+
+  foodorder-service:
+    build:
+      context: ./services/foodOrder-service
+      dockerfile: Dockerfile
+    container_name: foodorder-service
+    ports:
+     - "8014:8000"
+
 
