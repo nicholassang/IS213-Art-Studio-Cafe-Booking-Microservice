@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 
 # Initialize Supabase client
-SUPABASE_URL = "https://fdswggvfoewxvpofqcqj.supabase.co"
-SUPABASE_KEY = "sb_publishable_epk29CAGgL3DYkXHOKmPPA_5CqBt4oI"
+SUPABASE_URL = "https://blgtzrznellrbuptcogs.supabase.co"
+SUPABASE_KEY = "sb_publishable_VabQeIqtF9gGYouJFlyYhA_MaUdg9L7"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
