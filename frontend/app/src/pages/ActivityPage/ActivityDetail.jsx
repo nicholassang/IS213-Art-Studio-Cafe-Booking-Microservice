@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import Layout from "../../components/Layout";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
  
   .detail-root {
     font-family: 'DM Sans', sans-serif;
-    background: #faf8f5;
-    min-height: 100vh;
-    padding: 36px 48px;
   }
  
   .detail-back {
@@ -34,13 +32,14 @@ const styles = `
   }
  
   .detail-grid {
-    max-width: 1020px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 56px;
-    align-items: start;
-  }
+  max-width: 1020px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: start;
+  animation: softFade 0.2s ease;
+}
  
   .detail-image-wrap {
     position: relative;
@@ -173,41 +172,45 @@ const styles = `
     background: #c9a87c;
     transform: translateY(-1px);
   }
- 
-  .detail-loading {
-    font-family: 'DM Sans', sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    font-size: 1rem;
-    color: #aaa098;
-    background: #faf8f5;
-    letter-spacing: 0.06em;
-  }
 `;
 
 export default function ActivityDetail() {
   const { id } = useParams();
   const [activity, setActivity] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetch(`http://localhost:8000/activities/${id}`)
       .then(res => res.json())
-      .then(data => setActivity(data));
+      .then(data => {
+        setActivity(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
   }, [id]);
 
-  if (!activity) return (
+  if (loading) return (
     <>
       <style>{styles}</style>
-      <div className="detail-loading">Loading experience…</div>
+      <div className="detail-grid">
+        <div style={{ height: "420px", borderRadius: "20px" }} />
+        <div>
+          <div style={{ height: "30px", width: "60%" }} />
+          <div style={{ height: "14px", width: "40%", marginTop: "10px" }} />
+          <div style={{ height: "80px", marginTop: "20px" }} />
+        </div>
+      </div>
     </>
   );
 
   return (
     <>
       <style>{styles}</style>
-      <div className="detail-root">
+      <Layout>
 
         <button className="detail-back" onClick={() => window.history.back()}>
           ← Back
@@ -262,11 +265,11 @@ export default function ActivityDetail() {
               Book Now
             </button>
           </div>
-          
+
           {/* What to Expect */}
           <h3>What to Expect</h3>
           <ul>
-            {activity.what_to_expect.map((item, index) => (
+              {activity.what_to_expect?.map((item, index) => (
               <li key={index}>{item}</li>
             ))}
           </ul>
@@ -274,7 +277,7 @@ export default function ActivityDetail() {
           {/* Session Flow */}
           <h3>Session Flow</h3>
           <ul>
-            {activity.session_flow.map((item, index) => (
+            {activity.session_flow?.map((item, index) => (
               <li key={index}>{item}</li>
             ))}
           </ul>
@@ -282,13 +285,13 @@ export default function ActivityDetail() {
           {/* After Session */}
           <h3>After Session</h3>
           <ul>
-            {activity.after_session.map((item, index) => (
+            {activity.after_session?.map((item, index)=>(
               <li key={index}>{item}</li>
             ))}
           </ul>
 
         </div>
-      </div>
+      </Layout>
     </>
   );
 }

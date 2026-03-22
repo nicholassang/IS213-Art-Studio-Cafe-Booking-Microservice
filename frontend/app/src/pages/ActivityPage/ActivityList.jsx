@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Layout from "../../components/Layout";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
- 
-  .list-root {
+
+   .list-root {
     font-family: 'DM Sans', sans-serif;
-    background: #faf8f5;
-    min-height: 100vh;
-    padding: 48px;
   }
+ 
  
   .list-header {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin-bottom: 36px;
+    // text-align: center;
   }
   .list-eyebrow {
     font-size: 0.72rem;
@@ -65,7 +65,7 @@ const styles = `
  
   .list-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 24px;
   }
  
@@ -98,7 +98,7 @@ const styles = `
   }
   .list-card-img {
     width: 100%;
-    height: 200px;
+    height: 240px;
     object-fit: cover;
     display: block;
     transition: transform 0.35s ease;
@@ -150,13 +150,29 @@ const styles = `
 export default function ActivityList() {
   const [activities, setActivities] = useState([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    const startTime = Date.now();
+
     fetch("http://localhost:8000/getAllActivities")
       .then(res => res.json())
-      .then(data => setActivities(data.activities || []))
-      .catch(err => console.error("Error fetching activities:", err));
+      .then(data => {
+        const elapsed = Date.now() - startTime;
+
+        // 400ms loading
+        const delay = Math.max(400 - elapsed, 0);
+
+        setTimeout(() => {
+          setActivities(data.activities || []);
+          setLoading(false);
+        }, delay);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
   }, []);
 
   const filteredActivities = activities.filter(activity =>
@@ -166,8 +182,8 @@ export default function ActivityList() {
   return (
     <>
       <style>{styles}</style>
-      <div className="list-root">
 
+      <Layout>
         <div className="list-header">
           <span className="list-eyebrow">Explore &amp; Create</span>
           <h1 className="list-title">Art Activities 🎨</h1>
@@ -187,8 +203,10 @@ export default function ActivityList() {
 
         {/* Grid */}
         <div className="list-grid">
-          {filteredActivities.length === 0 ? (
-            <p className="list-empty">No activities found 😢</p>
+          {loading ? (
+            <p>Loading experience… 🎨</p>
+          ) : filteredActivities.length === 0 ? (
+            <p>No activities found 😢</p>
           ) : (
             filteredActivities.map(activity => (
               <div
@@ -206,7 +224,6 @@ export default function ActivityList() {
                 <div className="list-card-body">
                   <h3 className="list-card-name">{activity.name}</h3>
 
-                  {/* NEW INFO */}
                   <p style={{ fontSize: "0.85rem", color: "#7c6f5e" }}>
                     {activity.category} • {activity.duration}
                   </p>
@@ -224,7 +241,7 @@ export default function ActivityList() {
             ))
           )}
         </div>
-      </div>
+      </Layout>
     </>
   );
 }
