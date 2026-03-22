@@ -83,3 +83,4 @@ async def get_all_activities(request: Request):
         return JSONResponse(status_code=res.status_code, content=res.json())
     except httpx.RequestError as exc:
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
