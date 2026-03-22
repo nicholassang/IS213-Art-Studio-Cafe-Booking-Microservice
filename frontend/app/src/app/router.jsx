@@ -7,6 +7,8 @@ import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
 import FoodMenu from "../pages/FoodPage/FoodList.jsx";
 import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
+//import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
+//import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 
 // Protected route wrapper
 const Protected = ({ user, children }) => {
@@ -29,9 +31,16 @@ export const router = (user) =>
       path: "/activity/:id",
       element: <ActivityDetail />,
     },
+    
+    { path: "/menu",
+      element: <FoodMenu />,
+    },
+    { path: "/menu/:id", 
+      element: <FoodDetail /> 
+    },
+    { path: "/cart", 
+      element: <Cart /> 
+    },
 
 
-    {path: "/menu",element: <FoodMenu />,},
-    { path: "/menu/:id", element: <FoodDetail /> },
-    { path: "/cart", element: <Cart /> },
 ]);
