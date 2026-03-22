@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
+<<<<<<< Updated upstream
 import { useParams, useNavigate } from "react-router-dom";
+=======
+import { useParams } from "react-router-dom";
+import Layout from "../../components/Layout";
+>>>>>>> Stashed changes
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
  
   .detail-root {
     font-family: 'DM Sans', sans-serif;
-    background: #faf8f5;
-    min-height: 100vh;
-    padding: 36px 48px;
   }
  
   .detail-back {
@@ -212,8 +214,14 @@ export default function ActivityDetail() {
   return (
     <>
       <style>{styles}</style>
+<<<<<<< Updated upstream
       <div className="detail-root">
         <button className="detail-back" onClick={() => navigate(-1)}>
+=======
+      <Layout>
+
+        <button className="detail-back" onClick={() => window.history.back()}>
+>>>>>>> Stashed changes
           ← Back
         </button>
 
@@ -292,7 +300,7 @@ export default function ActivityDetail() {
           </ul>
 
         </div>
-      </div>
+      </Layout>
     </>
   );
 }
