@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const categories = ["All", "Main Meal", "Dessert", "Cake", "Drink"];
 
 export default function FoodMenu() {
   const [menu, setMenu] = useState([]);
   const [active, setActive] = useState("All");
+  const navigate = useNavigate(); 
 
   useEffect(() => {
     fetch("http://localhost:8000/menu/all")
@@ -23,6 +25,20 @@ export default function FoodMenu() {
       color: "#f5f0e8",
       padding: "0 0 60px",
     }}>
+
+      {/* Cart Icon */ }
+       <div style={{ position: "fixed", top: "24px", right: "24px", zIndex: 10 }}>
+        <button onClick={() => navigate("/cart")} style={{
+          background: "rgba(15,14,12,0.8)", border: "1px solid #2a2520",
+          color: "#b8935a", padding: "10px 20px", borderRadius: "999px",
+          cursor: "pointer", fontFamily: "'Georgia', serif", fontSize: "12px",
+          letterSpacing: "0.15em", textTransform: "uppercase",
+          backdropFilter: "blur(8px)",
+        }}>
+          🛒 Cart
+        </button>
+      </div>
+     
 
       {/* Hero Header */}
       <div style={{
@@ -96,6 +112,7 @@ export default function FoodMenu() {
         {filtered.map(item => (
           <div
             key={item.id}
+            onClick={() => navigate(`/menu/${item.name.toLowerCase().replace(/\s+/g, "-")}`)}
             style={{
               position: "relative",
               overflow: "hidden",
