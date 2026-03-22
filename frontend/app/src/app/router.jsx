@@ -21,24 +21,13 @@ export const router = (user) =>
     // auth 
     { path: "/login", element: <LoginPage /> },
     { path: "/register", element: <RegisterPage /> },
-    // 🎨 Activity Catalogue (PROTECTED)
     {
       path: "/activities",
-      element: (
-        <Protected user={user}>
-          <ActivityList />
-        </Protected>
-      ),
+      element: <ActivityList />,
     },
-
-    // Activity Details (PROTECTED)
     {
       path: "/activity/:id",
-      element: (
-        <Protected user={user}>
-          <ActivityDetail />
-        </Protected>
-      ),
+      element: <ActivityDetail />,
     },
 
 
