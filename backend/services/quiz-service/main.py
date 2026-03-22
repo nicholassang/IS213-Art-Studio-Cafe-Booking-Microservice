@@ -372,9 +372,9 @@ def _find_question_index(question_id: str) -> Optional[int]:
 
 # Routes
 
-@app.get("/health", tags=["Health"])
-def health_check():
-    return {"status": "ok", "service": "quiz"}
+# @app.get("/health", tags=["Health"])
+# def health_check():
+#    return {"status": "ok", "service": "quiz"}
 
 
 @app.get("/quiz/questions", response_model=list[QuestionOut], tags=["Quiz"])
