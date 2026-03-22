@@ -225,7 +225,7 @@ export default function ActivityList() {
                   <h3 className="list-card-name">{activity.name}</h3>
 
                   <p style={{ fontSize: "0.85rem", color: "#7c6f5e" }}>
-                    {activity.category} • {activity.duration}
+                    {activity.category} • {activity.duration} • {activity.level}
                   </p>
 
                   <p style={{ fontSize: "0.8rem", color: "#aaa098" }}>
