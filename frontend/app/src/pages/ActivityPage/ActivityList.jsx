@@ -153,7 +153,7 @@ export default function ActivityList() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("http://localhost:8003/activities")
+    fetch("http://localhost:8000/activities")
       .then(res => res.json())
       .then(data => setActivities(data.activities || []))
       .catch(err => console.error("Error fetching activities:", err));
