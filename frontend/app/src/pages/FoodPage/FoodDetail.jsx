@@ -12,7 +12,7 @@ export default function FoodDetail() {
 
   useEffect(() => {
     //from menu-service --> @app.get("/menu/name/{name}")
-    fetch(`http://localhost:8000/menu/name/${id}`)
+    fetch(`http://localhost:8003/menu/name/${id}`)
       .then(res => res.json())
       .then(data => setItem(data))
       .catch(err => console.error("Fetch error:", err));
@@ -22,7 +22,7 @@ export default function FoodDetail() {
     setLoading(true);
     try {
       //connect to Food_Order service
-      const res = await fetch("http://localhost:8001/food-order", {
+      const res = await fetch("http://localhost:8003/food-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         //credentials: "include",

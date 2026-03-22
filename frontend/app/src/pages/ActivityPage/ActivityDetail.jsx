@@ -6,7 +6,7 @@ export default function ActivityDetail() {
   const [activity, setActivity] = useState(null);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/activities/${id}`)
+    fetch(`http://localhost:8003/activities/${id}`)
       .then(res => res.json())
       .then(data => setActivity(data));
   }, [id]);

@@ -9,7 +9,7 @@ export default function FoodMenu() {
   const navigate = useNavigate(); 
 
   useEffect(() => {
-    fetch("http://localhost:8000/menu/all")
+    fetch("http://localhost:8003/menu")
       .then(res => res.json())
       .then(data => setMenu(data.menu ?? []))
       .catch(err => console.error("Fetch error:", err));

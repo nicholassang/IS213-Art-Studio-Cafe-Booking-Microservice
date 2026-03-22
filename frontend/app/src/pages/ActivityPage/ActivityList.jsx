@@ -4,9 +4,13 @@ export default function ActivityList() {
   const [activities, setActivities] = useState([]);
 
   useEffect(() => {
-    fetch("http://localhost:8000/getAllActivities")
+    fetch("http://localhost:8003/activities")
       .then(res => res.json())
-      .then(data => setActivities(data.activities));
+      .then(data => {
+        console.log("API response:", data); // check what data looks like
+        setActivities(data.activities ?? data ?? []);  // safe fallback
+      })
+      .catch(err => console.error("Fetch error:", err));
   }, []);
 
   return (
