@@ -86,3 +86,4 @@ services:
     container_name: quiz-service
     ports:
      - "8012:8000"
+
