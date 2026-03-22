@@ -1,5 +1,16 @@
 services:
 
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - COMPOSITE_URL=http://composite-service:8000
+    depends_on:
+      - composite-service
+
+
   user-service:
     build: ./services/user-service
     container_name: user-service
@@ -10,8 +21,6 @@ services:
   composite-service:
     build: ./composite-service/make-booking-composite-service
     container_name: make-booking-composite-service
-    ports:
-      - "8003:8000"
     environment:
       - AUTH_URL=http://auth-service:8000
       - AI_RECOMMENDATION_URL=http://ai-recommendation-wrapper:8000
