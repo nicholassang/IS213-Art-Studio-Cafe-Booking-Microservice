@@ -12,8 +12,10 @@ export default function Layout({ children }) {
       <div
         style={{
           width: "100%",
-          maxWidth: "1400px",  
-          padding: "40px 40px"
+          maxWidth: "1200px",  
+          padding: "40px 40px",
+          margin: "0 auto",
+          
         }}
       >
         {children}

@@ -193,19 +193,23 @@ export default function ActivityDetail() {
       });
   }, [id]);
 
-  if (loading) return (
-    <>
-      <style>{styles}</style>
-      <div className="detail-grid">
-        <div style={{ height: "420px", borderRadius: "20px" }} />
-        <div>
-          <div style={{ height: "30px", width: "60%" }} />
-          <div style={{ height: "14px", width: "40%", marginTop: "10px" }} />
-          <div style={{ height: "80px", marginTop: "20px" }} />
-        </div>
-      </div>
-    </>
-  );
+  if (loading || !activity) {
+    return (
+      <>
+        <style>{styles}</style>
+        <Layout>
+          <div className="detail-grid">
+            <div style={{ height: "420px", borderRadius: "20px", background: "#eee" }} />
+            <div>
+              <div style={{ height: "30px", width: "60%", background: "#eee" }} />
+              <div style={{ height: "14px", width: "40%", marginTop: "10px", background: "#eee" }} />
+              <div style={{ height: "80px", marginTop: "20px", background: "#eee" }} />
+            </div>
+          </div>
+        </Layout>
+      </>
+    );
+  }
 
   return (
     <>
@@ -266,30 +270,39 @@ export default function ActivityDetail() {
             </button>
           </div>
 
-          {/* What to Expect */}
-          <h3>What to Expect</h3>
-          <ul>
-              {activity.what_to_expect?.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
 
-          {/* Session Flow */}
-          <h3>Session Flow</h3>
-          <ul>
-            {activity.session_flow?.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
+          <div style={{ gridColumn: "1 / -1", marginTop: "40px" }}>
+            <div style={{
+              gridColumn: "1 / -1",
+              display: "grid",
+              gridTemplateColumns: "1fr 2fr",
+              gap: "40px",
+              marginTop: "60px"
+            }}>
 
-          {/* After Session */}
-          <h3>After Session</h3>
-          <ul>
-            {activity.after_session?.map((item, index)=>(
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
+              <h3>What to Expect</h3>
+              <ul>
+                {activity.what_to_expect?.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
 
+              <h3>Session Flow</h3>
+              <ul>
+                {activity.session_flow?.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+
+              <h3>After Session</h3>
+              <ul>
+                {activity.after_session?.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+
+            </div>
+          </div>
         </div>
       </Layout>
     </>
