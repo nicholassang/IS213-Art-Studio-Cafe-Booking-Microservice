@@ -1,5 +1,17 @@
+# Main
 fastapi
 uvicorn
-google-generativeai
 python-dotenv
 pydantic
+pydantic-settings
+httpx
+
+# AI
+groq
+google-genai
+
+# RabbitMQ
+aio_pika
+
+# Database
+# supabase

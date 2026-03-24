@@ -12,6 +12,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
+
 # Allow frontend later to access this service
 app.add_middleware(
     CORSMiddleware,
@@ -53,4 +54,5 @@ def get_by_category(category: str):
         .ilike("category", category) \
         .execute()
 
+    return {"activities": response.data}
     return {"activities": response.data}
