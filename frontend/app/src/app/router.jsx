@@ -50,4 +50,8 @@ export const router = (user) =>
     { path: "/cart", 
       element: <Cart /> 
     },
+    { path: "/cart", 
+      element: <Cart /> 
+    },
 ]);
+
