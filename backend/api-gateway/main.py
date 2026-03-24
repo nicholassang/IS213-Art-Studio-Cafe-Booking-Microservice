@@ -88,6 +88,7 @@ async def get_activities(request: Request):
     except httpx.RequestError as exc:
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
+<<<<<<< HEAD
 @app.get("/activities/category/{category}")
 async def get_activities_by_category(category: str, request: Request):
     try:
@@ -353,6 +354,12 @@ async def submit_quiz_session(session_id: str, request: Request):
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
 
+=======
+# ---------------------------------------------------------------------------
+# AI Recommender Composite routes
+# ---------------------------------------------------------------------------
+ 
+>>>>>>> 27f6bcd (amended the ai-recommednder-composite-service main code logic and included the links to the api-gateway from the ai recommender composite service)
 @app.get("/quiz/questions")
 async def get_quiz_questions(request: Request, category: str = None):
     params = {"category": category} if category else {}
@@ -456,4 +463,8 @@ async def preview_recommendation(request: Request):
             res = await client.post(f"{AI_RECOMMENDER_COMPOSITE_URL}/recommend/preview", json=data, cookies=request.cookies)
         return JSONResponse(status_code=res.status_code, content=res.json())
     except httpx.RequestError as exc:
+<<<<<<< HEAD
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+=======
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+>>>>>>> 27f6bcd (amended the ai-recommednder-composite-service main code logic and included the links to the api-gateway from the ai recommender composite service)
