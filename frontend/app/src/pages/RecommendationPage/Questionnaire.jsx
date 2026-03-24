@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const API_GATEWAY = "http://localhost:8000";
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
 
@@ -355,7 +357,7 @@ export default function QuizPage() {
   })());
 
   useEffect(() => {
-    fetch("http://localhost:8001/quiz/questions")
+    fetch(`${API_GATEWAY}/quiz/questions`)
       .then(r => r.json())
       .then(data => setQuestions(data))
       .catch(() => setError("Could not load questions. Please try again."));
@@ -403,7 +405,7 @@ export default function QuizPage() {
       selected_option_id,
     }));
     try {
-      const res = await fetch("http://localhost:8001/quiz/submit", {
+      const res = await fetch(`${API_GATEWAY}/recommend/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: USER_ID, answers: formattedAnswers }),
