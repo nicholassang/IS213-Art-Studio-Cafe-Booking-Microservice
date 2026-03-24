@@ -7,20 +7,20 @@ export default function Cart() {
   const totalPrice = orders.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   useEffect(() => {
-    fetch("http://localhost:8001/food-order/all")
+    fetch("http://localhost:8000/food-order/all")
       .then(res => res.json())
       .then(data => setOrders(data.orders ?? []))
       .catch(err => console.error("Fetch error:", err));
   }, []);
 
   const handleDelete = async (order_id) => {
-    await fetch(`http://localhost:8001/food-order/${order_id}`, { method: "DELETE" });
+    await fetch(`http://localhost:8000/food-order/${order_id}`, { method: "DELETE" });
     setOrders(prev => prev.filter(o => o.order_id !== order_id));
   };
 
   const handleUpdateQuantity = async (order_id, quantity) => {
     if (quantity < 1) return handleDelete(order_id);
-    await fetch(`http://localhost:8001/food-order/${order_id}/quantity`, {
+    await fetch(`http://localhost:8000/food-order/${order_id}/quantity`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ quantity }),

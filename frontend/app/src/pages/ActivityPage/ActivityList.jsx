@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Layout from "../../components/Layout";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
- 
-  .list-root {
+
+   .list-root {
     font-family: 'DM Sans', sans-serif;
-    background: #faf8f5;
-    min-height: 100vh;
-    padding: 48px;
   }
+ 
  
   .list-header {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin-bottom: 36px;
+    // text-align: center;
   }
   .list-eyebrow {
     font-size: 0.72rem;
@@ -65,7 +65,7 @@ const styles = `
  
   .list-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 24px;
   }
  
@@ -78,62 +78,70 @@ const styles = `
   }
  
   .list-card {
-    background: #fff;
-    border-radius: 16px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 1px solid #ede8e1;
-    transition: transform 0.22s ease, box-shadow 0.22s ease;
-    display: flex;
-    flex-direction: column;
-  }
-  .list-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 16px 32px rgba(26,22,18,0.10);
-  }
- 
-  .list-card-img-wrap {
-    position: relative;
-    overflow: hidden;
-  }
-  .list-card-img {
-    width: 100%;
-    height: 200px;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.35s ease;
-  }
-  .list-card:hover .list-card-img {
-    transform: scale(1.05);
-  }
- 
-  .list-card-body {
-    padding: 16px 18px 20px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .list-card-name {
-    font-family: 'Playfair Display', serif;
-    font-size: 1.12rem;
-    color: #1a1612;
-    margin: 0;
-    font-weight: 700;
-    line-height: 1.3;
-  }
-  .list-card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 10px;
-  }
-  .list-card-price {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: #c9a87c;
-  }
-  .list-card-arrow {
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.list-card:hover {
+  transform: scale(1.02);
+}
+
+/* IMAGE */
+.list-card-img {
+  width: 100%;
+  height: 260px;
+  object-fit: cover;
+}
+
+/* BODY */
+.list-card-body {
+  padding: 12px 4px;
+}
+
+/* TOP ROW */
+.list-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* TITLE */
+.list-card-name {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* RATING */
+.list-card-rating {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* SUBTEXT */
+.list-card-sub {
+  font-size: 0.85rem;
+  color: #717171;
+  margin: 2px 0;
+}
+
+/* PRICE */
+.list-card-price {
+  margin-top: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.list-card-price span {
+  font-weight: 400;
+  color: #717171;
+  font-size: 0.9rem;
+}
+
+.list-card-arrow {
     font-size: 0.8rem;
     color: #bdb4a8;
     background: #f5f0ea;
@@ -150,13 +158,29 @@ const styles = `
 export default function ActivityList() {
   const [activities, setActivities] = useState([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    const startTime = Date.now();
+
     fetch("http://localhost:8000/getAllActivities")
       .then(res => res.json())
-      .then(data => setActivities(data.activities || []))
-      .catch(err => console.error("Error fetching activities:", err));
+      .then(data => {
+        const elapsed = Date.now() - startTime;
+
+        // 400ms loading
+        const delay = Math.max(400 - elapsed, 0);
+
+        setTimeout(() => {
+          setActivities(data.activities || []);
+          setLoading(false);
+        }, delay);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
   }, []);
 
   const filteredActivities = activities.filter(activity =>
@@ -166,8 +190,8 @@ export default function ActivityList() {
   return (
     <>
       <style>{styles}</style>
-      <div className="list-root">
 
+      <Layout>
         <div className="list-header">
           <span className="list-eyebrow">Explore &amp; Create</span>
           <h1 className="list-title">Art Activities 🎨</h1>
@@ -187,8 +211,10 @@ export default function ActivityList() {
 
         {/* Grid */}
         <div className="list-grid">
-          {filteredActivities.length === 0 ? (
-            <p className="list-empty">No activities found 😢</p>
+          {loading ? (
+            <p>Loading experience… 🎨</p>
+          ) : filteredActivities.length === 0 ? (
+            <p>No activities found 😢</p>
           ) : (
             filteredActivities.map(activity => (
               <div
@@ -203,28 +229,36 @@ export default function ActivityList() {
                     className="list-card-img"
                   />
                 </div>
+
                 <div className="list-card-body">
-                  <h3 className="list-card-name">{activity.name}</h3>
 
-                  {/* NEW INFO */}
-                  <p style={{ fontSize: "0.85rem", color: "#7c6f5e" }}>
-                    {activity.category} • {activity.duration}
-                  </p>
-
-                  <p style={{ fontSize: "0.8rem", color: "#aaa098" }}>
-                    ⭐ {activity.rating} ({activity.reviews})
-                  </p>
-
-                  <div className="list-card-footer">
-                    <span className="list-card-price">${activity.price}</span>
-                    <span className="list-card-arrow">View →</span>
+                  {/* TOP */}
+                  <div className="list-card-top">
+                    <h3 className="list-card-name">{activity.name}</h3>
+                    <span className="list-card-rating">
+                      ⭐ {activity.rating}
+                    </span>
                   </div>
+
+                  {/* SUBTEXT */}
+                  <p className="list-card-sub">
+                    {activity.category} • {activity.duration} • {activity.level}
+                  </p>
+
+
+                  {/* PRICE */}
+                  <div className="list-card-price">
+                    ${activity.price} <span>/ person</span>
+                  </div>
+
                 </div>
               </div>
             ))
           )}
         </div>
-      </div>
+
+      </Layout>
+
     </>
   );
 }

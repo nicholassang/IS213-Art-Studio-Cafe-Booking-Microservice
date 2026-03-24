@@ -22,7 +22,7 @@ export default function FoodDetail() {
     setLoading(true);
     try {
       //connect to Food_Order service
-      const res = await fetch("http://localhost:8001/food-order", {
+      const res = await fetch("http://localhost:8000/food-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         //credentials: "include",

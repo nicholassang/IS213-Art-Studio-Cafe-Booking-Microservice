@@ -1,6 +1,7 @@
 import json
 import httpx
 import aio_pika
+import logging
 from aio_pika.abc import AbstractIncomingMessage
 from contextlib import asynccontextmanager
 from groq import AsyncGroq
@@ -13,12 +14,13 @@ from typing import Optional
 
 from prompts import QUIZ_SYSTEM_PROMPT
 
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file="./wrappers/ai-recommendation-wrapper/.env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     groq_api_key: str
     groq_model: str = "llama-3.1-8b-instant"
@@ -44,6 +46,8 @@ settings = Settings()
 class QuizAnswer(BaseModel):
     question_id: str
     selected_option_id: str
+    question_text: Optional[str] = None
+    option_text: Optional[str] = None
 
 class QuizSubmittedEvent(BaseModel):
     submission_id: str
@@ -156,7 +160,7 @@ async def get_ai_recommendation(answers: list[QuizAnswer]) -> Recommendation:
         response = await gemini_client.aio.models.generate_content(
             model=settings.gemini_model,
             contents=user_prompt,
-            config=types.GenerateContextConfig(
+            config=types.GenerateContentConfig(
                 system_instruction=QUIZ_SYSTEM_PROMPT,
                 temperature=0.3
             )
@@ -192,6 +196,7 @@ async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
         await post_to_orchestrator(event, recommendation)
         await message.ack()
     except Exception:
+        logger.exception("Failed to process quiz submission")
         await message.nack(requeue=False)
 
 
