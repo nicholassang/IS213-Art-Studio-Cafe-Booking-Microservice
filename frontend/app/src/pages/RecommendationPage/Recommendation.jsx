@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
+const API_GATEWAY = "http://localhost:8000";
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
 
@@ -496,10 +498,9 @@ export default function RecommendationPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load submission + all activities in parallel
         const [subRes, activitiesRes] = await Promise.all([
-          fetch(`http://localhost:8001/quiz/submissions/${submissionId}`),
-          fetch("http://localhost:8000/getAllActivities"),
+          fetch(`${API_GATEWAY}/quiz/submissions/${submissionId}`),
+          fetch(`${API_GATEWAY}/getAllActivities`),
         ]);
 
         if (!subRes.ok) throw new Error("Submission not found");
@@ -509,18 +510,16 @@ export default function RecommendationPage() {
         const activitiesData = await activitiesRes.json();
         const allActivities = activitiesData.activities || [];
 
-        // Match the AI recommendation name to an activity
         const recName = sub.recommendation?.activity || "";
         const match = allActivities.find(a =>
           a.name.toLowerCase().includes(recName.toLowerCase()) ||
           recName.toLowerCase().includes(a.name.toLowerCase())
-        ) || allActivities[0]; // fallback to first
+        ) || allActivities[0];
 
         setRecommended({ ...match, aiReason: sub.recommendation?.reason, confidence: sub.recommendation?.confidence ?? 0.85 });
         setOtherActivities(allActivities.filter(a => a.id !== match?.id).slice(0, 3));
         setLoading(false);
 
-        // Animate confidence bar
         setTimeout(() => setConfWidth((sub.recommendation?.confidence ?? 0.85) * 100), 200);
       } catch (e) {
         setError(e.message || "Something went wrong");
