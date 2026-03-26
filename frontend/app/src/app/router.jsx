@@ -9,6 +9,7 @@ import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
 import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
 import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
+import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 
 
 // Protected route wrapper
@@ -33,25 +34,35 @@ export const router = (user) =>
       element: <ActivityDetail />,
     },
     // AI quiz
-    { path: "/quiz", 
-      element: <Questionnaire /> 
+    {
+      path: "/quiz",
+      element: <Questionnaire />
     },
     // quiz result
-    { path: "/quiz/result/:submissionId", 
-      element: <Recommendation /> 
+    {
+      path: "/quiz/result/:submissionId",
+      element: <Recommendation />
     },
-    
-    { path: "/menu",
+
+    {
+      path: "/menu",
       element: <FoodMenu />,
     },
-    { path: "/menu/:id", 
-      element: <FoodDetail /> 
+    {
+      path: "/menu/:id",
+      element: <FoodDetail />
     },
-    { path: "/cart", 
-      element: <Cart /> 
+    {
+      path: "/cart",
+      element: <Cart />
     },
-    { path: "/cart", 
-      element: <Cart /> 
+    {
+      path: "/cart",
+      element: <Cart />
     },
-]);
+    {
+      path: "/saved-experiences",
+      element: <SavedExperiences />
+    }
+  ]);
 
