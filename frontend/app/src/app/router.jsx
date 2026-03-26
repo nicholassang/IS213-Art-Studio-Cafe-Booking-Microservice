@@ -7,8 +7,8 @@ import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
 import FoodMenu from "../pages/FoodPage/FoodList.jsx";
 import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
-import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
-import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
+import QuizPage from "../pages/RecommendationPage/Questionnaire.jsx"
+import RecommendationPage from "../pages/RecommendationPage/Recommendation.jsx"
 
 
 // Protected route wrapper
@@ -46,9 +46,6 @@ export const router = (user) =>
     },
     { path: "/menu/:id", 
       element: <FoodDetail /> 
-    },
-    { path: "/cart", 
-      element: <Cart /> 
     },
     { path: "/cart", 
       element: <Cart /> 

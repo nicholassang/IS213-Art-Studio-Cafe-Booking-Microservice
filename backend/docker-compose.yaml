@@ -28,7 +28,7 @@ services:
     depends_on:
       - user-service
       - ai-recommendation-wrapper
-      - payment-wrapper
+  #    - payment-wrapper
       - menu-service
       - foodorder-service
       - activity-service
@@ -39,11 +39,11 @@ services:
     ports:
       - "8006:8000"
 
-  payment-wrapper:
-    build: ./wrappers/payment-wrapper
-    container_name: payment-wrapper
-    ports:
-     - "8007:8000"
+  #payment-wrapper:
+  #  build: ./wrappers/payment-wrapper
+  #  container_name: payment-wrapper
+  #  ports:
+  #   - "8007:8000"
 
   # ai-recommendation-wrapper:
   #   build: ./wrappers/ai-recommendation-wrapper
