@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY services/calendar-service/requirements.txt .
+COPY services/notification_service/requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY services/notification_service .

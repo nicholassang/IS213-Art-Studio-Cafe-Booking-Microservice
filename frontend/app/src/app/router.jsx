@@ -11,7 +11,7 @@ import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
 import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 
-
+  
 // Protected route wrapper
 const Protected = ({ user, children }) => {
   if (!user) return <Navigate to="/login" replace />;
@@ -55,12 +55,8 @@ export const router = (user) =>
       element: <Cart />
     },
     {
-      path: "/cart",
-      element: <Cart />
-    },
-    {
       path: "/saved-experiences",
       element: <SavedExperiences />
     }
-  ]);
+]);
 

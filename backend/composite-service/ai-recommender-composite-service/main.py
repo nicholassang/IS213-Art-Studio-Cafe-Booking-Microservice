@@ -13,7 +13,7 @@ app.add_middleware(
 )
 
 QUIZ_URL = "http://quiz-service:8000"
-AI_RECOMMENDATION_URL = "http://ai-recommendation-service:8000"
+AI_RECOMMENDATION_URL = "http://ai-recommendation-wrapper:8000"
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,74 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: user-service
+    url: http://user-service:8000
+    routes:
+      - name: user-auth-routes
+        paths:
+          - /register
+          - /login
+          - /profile
+          - /logout
+        strip_path: false
+
+  - name: booking-composite-service
+    url: http://make-booking-composite-service:8000
+    routes:
+      - name: booking-app-routes
+        paths:
+          - /activities
+          - /menu
+          - /booking
+          - /food-order
+        strip_path: false
+
+  - name: activity-service
+    url: http://activity-service:8000
+    routes:
+      - name: saved-activity-routes
+        paths:
+          - /saved-activities
+          - /saved-experiences
+        strip_path: false
+
+  - name: ai-recommender-composite-service
+    url: http://ai-recommender-composite-service:8000
+    routes:
+      - name: ai-recommender-routes
+        paths:
+          - /quiz
+          - /recommend
+        strip_path: false
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+        - http://localhost:5174
+        - http://127.0.0.1:5174
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+        - X-Requested-With
+        - Cookie
+      exposed_headers:
+        - Set-Cookie
+      credentials: true
+      max_age: 3600
+      preflight_continue: false

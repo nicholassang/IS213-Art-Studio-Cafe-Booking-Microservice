@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client
+from postgrest.exceptions import APIError
 from pydantic import BaseModel
+import re
 
 # Initialize Supabase client
 SUPABASE_URL = "https://blgtzrznellrbuptcogs.supabase.co"
@@ -38,6 +40,63 @@ def get_activities():
     response = supabase.table("activities").select("*").execute()
     return {"activities": response.data}
 
+
+@app.post("/bookings")
+def create_booking(payload: dict):
+    # Store full booking record: user info, activity, time slot, food orders, payment
+    booking_payload = {
+        "user_name": payload.get("user_name"),
+        "user_email": payload.get("user_email"),
+        "activity_id": payload.get("activity_id"),
+        "activity_name": payload.get("activity_name"),
+        "start_time": payload.get("start_time"),
+        "end_time": payload.get("end_time"),
+        "food_orders": payload.get("food_orders"),     # jsonb: list of ordered items
+        "total_amount": payload.get("total_amount"),
+        "status": payload.get("status", "confirmed"),
+        "payment": payload.get("payment"),             # jsonb: transaction_id, method, status
+        "additional_notes": payload.get("additional_notes", ""),
+    }
+
+    # Keep insertion compatible with older schemas by dropping unknown columns one by one.
+    insert_payload = {k: v for k, v in booking_payload.items() if v is not None}
+    omitted_columns = []
+
+    while True:
+        try:
+            response = supabase.table("bookings").insert(insert_payload).execute()
+            break
+        except APIError as exc:
+            message = str(exc)
+            if "PGRST204" not in message:
+                raise HTTPException(status_code=500, detail=message)
+
+            match = re.search(r"'([^']+)' column", message)
+            if not match:
+                raise HTTPException(status_code=500, detail=message)
+
+            missing_col = match.group(1)
+            if missing_col not in insert_payload:
+                raise HTTPException(status_code=500, detail=message)
+
+            omitted_columns.append(missing_col)
+            insert_payload.pop(missing_col, None)
+
+            if not insert_payload:
+                raise HTTPException(status_code=500, detail="No compatible columns found for bookings table")
+
+    return {
+        "success": True,
+        "booking": response.data[0] if response.data else None,
+        "omitted_columns": omitted_columns,
+    }
+
+
+@app.get("/bookings")
+def list_bookings():
+    response = supabase.table("bookings").select("*").execute()
+    return {"success": True, "bookings": response.data}
+
 # Get single activity (details page)
 @app.get("/activities/{activity_id}")
 def get_activity(activity_id: str):
@@ -64,11 +123,14 @@ def get_by_category(category: str):
 # Save an activity
 @app.post("/saved-activities")
 def save_activity(payload: SaveActivityRequest):
-    existing = supabase.table("saved_activities") \
-        .select("*") \
-        .eq("user_name", payload.user_name) \
-        .eq("activity_id", payload.activity_id) \
-        .execute()
+    try:
+        existing = supabase.table("saved_activities") \
+            .select("*") \
+            .eq("user_name", payload.user_name) \
+            .eq("activity_id", payload.activity_id) \
+            .execute()
+    except APIError as exc:
+        raise HTTPException(status_code=500, detail=exc.message)
 
     if existing.data:
         return {
@@ -76,12 +138,15 @@ def save_activity(payload: SaveActivityRequest):
             "saved": True
         }
 
-    response = supabase.table("saved_activities") \
-        .insert({
-            "user_name": payload.user_name,
-            "activity_id": payload.activity_id
-        }) \
-        .execute()
+    try:
+        response = supabase.table("saved_activities") \
+            .insert({
+                "user_name": payload.user_name,
+                "activity_id": payload.activity_id
+            }) \
+            .execute()
+    except APIError as exc:
+        raise HTTPException(status_code=500, detail=exc.message)
 
     return {
         "message": "Activity saved successfully",
