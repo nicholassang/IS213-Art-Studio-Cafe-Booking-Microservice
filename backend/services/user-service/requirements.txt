@@ -3,3 +3,5 @@ uvicorn
 passlib[argon2]
 python-multipart
 itsdangerous
+supabase
+email-validator

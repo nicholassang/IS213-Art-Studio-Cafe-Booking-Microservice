@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Request, Body, Response
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+import os
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 app = FastAPI()
 
@@ -15,17 +18,150 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CALENDAR_URL = "http://calendar-service:8000"
 ACTIVITY_URL = "http://activity-service:8000"
 MENU_URL = "http://menu-service:8000" 
 FOOD_ORDER_URL = "http://foodorder-service:8000"
+PAYMENT_URL = os.getenv("PAYMENT_URL", "http://payment-wrapper:8000")
+NOTIFICATION_URL = os.getenv("NOTIFICATION_URL", "http://notification-service:8000")
 
 
-@app.get("/calendar-url")
-async def get_bookings():
+class FoodItem(BaseModel):
+    id: int
+    quantity: int = Field(..., gt=0)
+    comment: Optional[str] = ""
+
+
+class BookingRequest(BaseModel):
+    user_name: str
+    user_email: str
+    activity_id: str
+    start_time: str
+    end_time: str
+    food_items: List[FoodItem]
+    payment_method: str = "card"
+    additional_notes: Optional[str] = None
+
+
+@app.post("/booking")
+async def create_booking(payload: BookingRequest):
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{CALENDAR_URL}/calendar-url")
-    return res.json()
+        # Validate activity selected first
+        activity_resp = await client.get(f"{ACTIVITY_URL}/activities/{payload.activity_id}")
+        if activity_resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
+        activity = activity_resp.json()
+
+        # Validate requested food items and create food orders using food order service
+        food_order_responses = []
+        total_amount = 0.0
+
+        for item in payload.food_items:
+            menu_resp = await client.get(f"{MENU_URL}/menu/{item.id}")
+            if menu_resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Menu item {item.id} not found")
+
+            menu_item = menu_resp.json()
+            item_total = float(menu_item.get("price", 0)) * item.quantity
+            total_amount += item_total
+
+            order_payload = {
+                "menu_item_id": item.id,
+                "name": menu_item.get("name"),
+                "price": float(menu_item.get("price", 0)),
+                "quantity": item.quantity,
+                # Include booking-scoped fallback comment so food orders are not merged across unrelated bookings.
+                "comment": item.comment or f"booking:{payload.activity_id}:{payload.start_time}",
+                "image_url": menu_item.get("image_url", ""),
+            }
+
+            food_resp = await client.post(f"{FOOD_ORDER_URL}/food-order", json=order_payload)
+            if food_resp.status_code != 200:
+                raise HTTPException(status_code=500, detail="Failed to create food order")
+
+            food_order_responses.append(food_resp.json().get("order"))
+
+        # process payment via wrapper
+        payment_resp = await client.post(
+            f"{PAYMENT_URL}/process-payment",
+            json={
+                "amount": total_amount,
+                "currency": "USD",
+                "payment_method": payload.payment_method,
+                "description": f"Booking for {activity.get('name', payload.activity_id)}",
+            },
+        )
+
+        if payment_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Payment service failed")
+
+        payment = payment_resp.json()
+
+        # save booking record in activity service and/or Supabase table
+        booking_payload = {
+            "user_name": payload.user_name,
+            "user_email": payload.user_email,
+            "activity_id": payload.activity_id,
+            "activity_name": activity.get("name", ""),
+            "start_time": payload.start_time,
+            "end_time": payload.end_time,
+            "food_orders": food_order_responses,
+            "total_amount": total_amount,
+            "status": "confirmed",
+            "payment": payment,
+            "additional_notes": payload.additional_notes or "",
+        }
+
+        booking_save_resp = await client.post(f"{ACTIVITY_URL}/bookings", json=booking_payload)
+        if booking_save_resp.status_code not in (200, 201):
+            error_body = None
+            try:
+                error_body = booking_save_resp.json()
+            except ValueError:
+                error_body = booking_save_resp.text
+
+            # non-blocking fallback, still continue with booking success but warn
+            saved_booking = {
+                "warning": "Booking created but failed to persist in booking table",
+                "error": error_body,
+                "payload": booking_payload,
+            }
+        else:
+            saved_booking = booking_save_resp.json()
+
+        notification_result = {"success": False, "message": "Notification not sent"}
+        try:
+            notification_resp = await client.post(
+                f"{NOTIFICATION_URL}/send-transaction-notification",
+                json={
+                    "to_email": payload.user_email,
+                    "username": payload.user_name,
+                    "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${total_amount:.2f}",
+                },
+            )
+            notification_body = None
+            try:
+                notification_body = notification_resp.json()
+            except ValueError:
+                notification_body = notification_resp.text
+
+            notification_result = {
+                "success": notification_resp.status_code in (200, 201),
+                "status_code": notification_resp.status_code,
+                "response": notification_body,
+            }
+        except httpx.RequestError:
+            notification_result = {"success": False, "message": "Notification service unavailable"}
+
+        return {
+            "success": True,
+            "booking": saved_booking,
+            "food_orders": food_order_responses,
+            "payment": payment,
+            "activity": activity,
+            "total_amount": total_amount,
+            "notification": notification_result,
+        }
 
 #Activities link to activity service(atomic service)
 @app.get("/activities")

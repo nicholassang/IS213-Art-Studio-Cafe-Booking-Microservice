@@ -15,6 +15,8 @@ app.add_middleware(
 
 COMPOSITE_URL = os.getenv("COMPOSITE_URL", "http://composite-service:8000")
 USER_URL = "http://user-service:8000"    # User Service called directly from API gateway, we make it have its own composite if needed
+AI_RECOMMENDER_COMPOSITE_URL = os.getenv("AI_RECOMMENDER_COMPOSITE_URL", "http://ai-recommender-composite-service:8000")
+ACTIVITY_URL = os.getenv("ACTIVITY_URL", "http://activity-service:8000")
 
 from fastapi.responses import JSONResponse
 
@@ -65,15 +67,6 @@ async def logout(request: Request):
     except httpx.RequestError as exc:
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
-
-@app.get("/calendar-url")
-async def get_calendar_url(request: Request):
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get(f"{COMPOSITE_URL}/calendar-url", cookies=request.cookies)
-        return JSONResponse(status_code=res.status_code, content=res.json())
-    except httpx.RequestError as exc:
-        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
 #Activities
 @app.get("/activities")
@@ -136,6 +129,80 @@ async def get_menu_item(item_id: int, request: Request):
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(f"{COMPOSITE_URL}/menu/{item_id}", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.post("/booking")
+async def create_booking(request: Request):
+    try:
+        data = await request.json()
+        async with httpx.AsyncClient() as client:
+            res = await client.post(f"{COMPOSITE_URL}/booking", json=data, cookies=request.cookies)
+
+        try:
+            content = res.json()
+        except ValueError:
+            content = {"success": False, "message": res.text or "Invalid response from booking composite service"}
+
+        return JSONResponse(status_code=res.status_code, content=content)
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.post("/saved-activities")
+async def save_activity(request: Request):
+    try:
+        data = await request.json()
+        async with httpx.AsyncClient() as client:
+            res = await client.post(f"{ACTIVITY_URL}/saved-activities", json=data, cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.delete("/saved-activities/{user_name}/{activity_id}")
+async def unsave_activity(user_name: str, activity_id: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.delete(
+                f"{ACTIVITY_URL}/saved-activities/{user_name}/{activity_id}",
+                cookies=request.cookies,
+            )
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.get("/saved-activities/{user_name}/{activity_id}")
+async def check_saved_activity(user_name: str, activity_id: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"{ACTIVITY_URL}/saved-activities/{user_name}/{activity_id}",
+                cookies=request.cookies,
+            )
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.get("/saved-activities/{user_name}")
+async def get_saved_activities(user_name: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"{ACTIVITY_URL}/saved-activities/{user_name}", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.get("/saved-experiences/{user_name}")
+async def get_saved_experiences(user_name: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"{ACTIVITY_URL}/saved-experiences/{user_name}", cookies=request.cookies)
         return JSONResponse(status_code=res.status_code, content=res.json())
     except httpx.RequestError as exc:
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})

@@ -3,155 +3,285 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
 
-   .list-root {
-    font-family: 'DM Sans', sans-serif;
+  :root {
+    --bg: #faf7f2;
+    --surface: #fffdf9;
+    --surface-2: #f5efe6;
+    --text: #241c17;
+    --muted: #7d7468;
+    --line: #e6ddd1;
+    --accent: #c8a97e;
+    --accent-deep: #b38d5e;
+    --shadow: 0 12px 30px rgba(42, 30, 18, 0.08);
   }
- 
- 
+
+  .list-root {
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+  }
+
+  .list-hero {
+    background: linear-gradient(135deg, #f7f1e8 0%, #fdfaf6 100%);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    padding: 40px 36px;
+    margin-bottom: 28px;
+    box-shadow: var(--shadow);
+  }
+
   .list-header {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 36px;
-    // text-align: center;
+    gap: 10px;
+    margin-bottom: 24px;
   }
+
   .list-eyebrow {
-    font-size: 0.72rem;
-    letter-spacing: 0.14em;
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: #c9a87c;
-    font-weight: 500;
+    color: var(--accent-deep);
+    font-weight: 700;
   }
+
   .list-title {
     font-family: 'Playfair Display', serif;
-    font-size: 3rem;
-    color: #1a1612;
+    font-size: 3.1rem;
+    color: var(--text);
     font-weight: 700;
     margin: 0;
-    line-height: 1.1;
+    line-height: 1.05;
   }
- 
+
+  .list-subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1rem;
+    line-height: 1.8;
+    max-width: 720px;
+  }
+
   .list-search-wrap {
     position: relative;
-    max-width: 480px;
-    margin-bottom: 40px;
+    max-width: 460px;
   }
+
   .list-search-icon {
     position: absolute;
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    color: #aaa098;
-    font-size: 0.9rem;
+    color: #9d9285;
+    font-size: 0.95rem;
     pointer-events: none;
   }
+
   .list-search {
     width: 100%;
-    padding: 13px 18px 13px 42px;
-    border: 1.5px solid #e2dbd2;
-    border-radius: 12px;
-    font-size: 0.93rem;
+    padding: 14px 18px 14px 42px;
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    font-size: 0.95rem;
     font-family: 'DM Sans', sans-serif;
-    background: #fff;
-    color: #1a1612;
+    background: rgba(255,255,255,0.92);
+    color: var(--text);
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
     box-sizing: border-box;
   }
-  .list-search::placeholder { color: #bdb4a8; }
-  .list-search:focus { border-color: #c9a87c; }
- 
+
+  .list-search::placeholder {
+    color: #b7ab9c;
+  }
+
+  .list-search:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(200, 169, 126, 0.12);
+  }
+
+  .list-results-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 10px 0 22px;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .list-results-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-weight: 500;
+  }
+
   .list-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 26px;
   }
- 
-  .list-empty {
-    color: #aaa098;
-    font-size: 0.95rem;
-    grid-column: 1/-1;
-    padding: 40px 0;
+
+  .list-empty,
+  .list-loading {
+    color: var(--muted);
+    font-size: 0.98rem;
+    grid-column: 1 / -1;
+    padding: 52px 20px;
     text-align: center;
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 20px;
   }
- 
+
   .list-card {
-  background: #fff;
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-}
-
-.list-card:hover {
-  transform: scale(1.02);
-}
-
-/* IMAGE */
-.list-card-img {
-  width: 100%;
-  height: 260px;
-  object-fit: cover;
-}
-
-/* BODY */
-.list-card-body {
-  padding: 12px 4px;
-}
-
-/* TOP ROW */
-.list-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-/* TITLE */
-.list-card-name {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-/* RATING */
-.list-card-rating {
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-/* SUBTEXT */
-.list-card-sub {
-  font-size: 0.85rem;
-  color: #717171;
-  margin: 2px 0;
-}
-
-/* PRICE */
-.list-card-price {
-  margin-top: 8px;
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
-.list-card-price span {
-  font-weight: 400;
-  color: #717171;
-  font-size: 0.9rem;
-}
-
-.list-card-arrow {
-    font-size: 0.8rem;
-    color: #bdb4a8;
-    background: #f5f0ea;
-    padding: 5px 10px;
-    border-radius: 100px;
-    transition: background 0.2s, color 0.2s;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    box-shadow: 0 6px 18px rgba(36, 28, 23, 0.05);
   }
+
+  .list-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 34px rgba(36, 28, 23, 0.1);
+    border-color: #dcc8ae;
+  }
+
+  .list-card-img-wrap {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .list-card-img {
+    width: 100%;
+    height: 250px;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.35s ease;
+  }
+
+  .list-card:hover .list-card-img {
+    transform: scale(1.04);
+  }
+
+  .list-card-category {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: inline-block;
+    background: rgba(255, 252, 247, 0.92);
+    backdrop-filter: blur(8px);
+    color: #6d5b47;
+    border: 1px solid rgba(220, 204, 182, 0.9);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .list-card-body {
+    padding: 18px 18px 20px;
+  }
+
+  .list-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .list-card-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    line-height: 1.2;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text);
+  }
+
+  .list-card-rating {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    background: #f8f2e8;
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    border-radius: 999px;
+  }
+
+  .list-card-desc {
+    font-size: 0.92rem;
+    color: var(--muted);
+    line-height: 1.7;
+    margin: 0 0 14px;
+  }
+
+  .list-card-meta {
+    font-size: 0.86rem;
+    color: #8b8073;
+    margin-bottom: 16px;
+  }
+
+  .list-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 14px;
+    border-top: 1px solid #f0e6d9;
+  }
+
+  .list-card-price {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .list-card-price span {
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .list-card-arrow {
+    font-size: 0.82rem;
+    color: #8d7f70;
+    background: #f5ede2;
+    padding: 8px 12px;
+    border-radius: 999px;
+    transition: background 0.2s, color 0.2s, transform 0.2s;
+  }
+
   .list-card:hover .list-card-arrow {
-    background: #1a1612;
+    background: var(--text);
     color: #fff;
+    transform: translateX(2px);
+  }
+
+  @media (max-width: 768px) {
+    .list-hero {
+      padding: 28px 22px;
+      border-radius: 22px;
+    }
+
+    .list-title {
+      font-size: 2.3rem;
+    }
+
+    .list-grid {
+      grid-template-columns: 1fr;
+    }
   }
 `;
 
@@ -168,8 +298,6 @@ export default function ActivityList() {
       .then(res => res.json())
       .then(data => {
         const elapsed = Date.now() - startTime;
-
-        // 400ms loading
         const delay = Math.max(400 - elapsed, 0);
 
         setTimeout(() => {
@@ -192,73 +320,110 @@ export default function ActivityList() {
       <style>{styles}</style>
 
       <Layout>
-        <div className="list-header">
-          <span className="list-eyebrow">Explore &amp; Create</span>
-          <h1 className="list-title">Art Activities 🎨</h1>
-        </div>
-
-        {/* Search Bar */}
-        <div className="list-search-wrap">
-          <span className="list-search-icon">⌕</span>
-          <input
-            type="text"
-            placeholder="Search activities..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="list-search"
-          />
-        </div>
-
-        {/* Grid */}
-        <div className="list-grid">
-          {loading ? (
-            <p>Loading experience… 🎨</p>
-          ) : filteredActivities.length === 0 ? (
-            <p>No activities found 😢</p>
-          ) : (
-            filteredActivities.map(activity => (
-              <div
-                key={activity.id}
-                className="list-card"
-                onClick={() => navigate(`/activity/${activity.id}`)}
-              >
-                <div className="list-card-img-wrap">
-                  <img
-                    src={activity.image}
-                    alt={activity.name}
-                    className="list-card-img"
-                  />
-                </div>
-
-                <div className="list-card-body">
-
-                  {/* TOP */}
-                  <div className="list-card-top">
-                    <h3 className="list-card-name">{activity.name}</h3>
-                    <span className="list-card-rating">
-                      ⭐ {activity.rating}
-                    </span>
-                  </div>
-
-                  {/* SUBTEXT */}
-                  <p className="list-card-sub">
-                    {activity.category} • {activity.duration} • {activity.level}
-                  </p>
-
-
-                  {/* PRICE */}
-                  <div className="list-card-price">
-                    ${activity.price} <span>/ person</span>
-                  </div>
-
-                </div>
+        <div className="list-root">
+          <section className="list-hero">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: "16px",
+                flexWrap: "wrap",
+                marginBottom: "24px",
+              }}
+            >
+              <div className="list-header" style={{ marginBottom: 0 }}>
+                <span className="list-eyebrow">Art Café Experiences</span>
+                <h1 className="list-title">Create, Sip & Slow Down 🎨</h1>
+                <p className="list-subtitle">
+                  Discover warm, hands-on art sessions designed for a calm café-inspired experience —
+                  from painting and craft workshops to creative moments you can enjoy with friends.
+                </p>
               </div>
-            ))
-          )}
+
+              <button
+                onClick={() => navigate("/saved-experiences")}
+                style={{
+                  padding: "12px 18px",
+                  borderRadius: "999px",
+                  border: "1px solid #e6ddd1",
+                  background: "#fffdf9",
+                  color: "#241c17",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ❤️ Saved Experiences
+              </button>
+            </div>
+
+            <div className="list-search-wrap">
+              <span className="list-search-icon">⌕</span>
+              <input
+                type="text"
+                placeholder="Search activities..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="list-search"
+              />
+            </div>
+          </section>
+
+          <div className="list-results-bar">
+            <span>{filteredActivities.length} experience{filteredActivities.length !== 1 ? "s" : ""}</span>
+            <span className="list-results-pill">Curated for a cozy studio feel</span>
+          </div>
+
+          <div className="list-grid">
+            {loading ? (
+              <div className="list-loading">Loading experiences… 🎨</div>
+            ) : filteredActivities.length === 0 ? (
+              <div className="list-empty">No activities found for your search.</div>
+            ) : (
+              filteredActivities.map(activity => (
+                <div
+                  key={activity.id}
+                  className="list-card"
+                  onClick={() => navigate(`/activity/${activity.id}`)}
+                >
+                  <div className="list-card-img-wrap">
+                    <img
+                      src={activity.image}
+                      alt={activity.name}
+                      className="list-card-img"
+                    />
+                    <span className="list-card-category">{activity.category}</span>
+                  </div>
+
+                  <div className="list-card-body">
+                    <div className="list-card-top">
+                      <h3 className="list-card-name">{activity.name}</h3>
+                      <span className="list-card-rating">⭐ {activity.rating}</span>
+                    </div>
+
+                    <p className="list-card-desc">
+                      {activity.description?.slice(0, 95)}...
+                    </p>
+
+                    <div className="list-card-meta">
+                      {activity.duration} • {activity.level}
+                    </div>
+
+                    <div className="list-card-footer">
+                      <div className="list-card-price">
+                        ${activity.price} <span>/ person</span>
+                      </div>
+                      <span className="list-card-arrow">View →</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-
       </Layout>
-
     </>
   );
 }

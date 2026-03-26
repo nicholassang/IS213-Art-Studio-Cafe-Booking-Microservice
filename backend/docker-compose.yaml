@@ -25,13 +25,15 @@ services:
       - AUTH_URL=http://auth-service:8000
       - AI_RECOMMENDATION_URL=http://ai-recommendation-wrapper:8000
       - PAYMENT_URL=http://payment-wrapper:8000
+      - NOTIFICATION_URL=http://notification-service:8000
     depends_on:
       - user-service
       - ai-recommendation-wrapper
-  #    - payment-wrapper
+      - payment-wrapper
       - menu-service
       - foodorder-service
       - activity-service
+      - notification-service
 
   ai-recommendation-wrapper:
     build: ./wrappers/ai-recommendation-wrapper
@@ -39,11 +41,11 @@ services:
     ports:
       - "8006:8000"
 
-  #payment-wrapper:
-  #  build: ./wrappers/payment-wrapper
-  #  container_name: payment-wrapper
-  #  ports:
-  #   - "8007:8000"
+  payment-wrapper:
+    build: ./wrappers/payment-wrapper
+    container_name: payment-wrapper
+    ports:
+      - "8007:8000"
 
   # ai-recommendation-wrapper:
   #   build: ./wrappers/ai-recommendation-wrapper
@@ -60,19 +62,14 @@ services:
   #   env_file:
   #    - ./wrappers/payment-wrapper/.env
   #
-  calendar-service:
-    build:
-      context: .
-      dockerfile: ./services/calendar-service/Dockerfile
-    container_name: calendar-service
-    ports:
-     - "8009:8000"
-
   notification-service:
     build:
       context: .
       dockerfile: ./services/notification_service/Dockerfile
     container_name: notification-service
+    environment:
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-onboarding@resend.dev}
     ports:
      - "8010:8000"
 
