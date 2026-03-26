@@ -1,14 +1,44 @@
 services:
 
-  api-gateway:
-    build: ./api-gateway
-    container_name: api-gateway
+  kong:
+    image: kong:3.7
+    container_name: kong-api-gateway
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
     ports:
       - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./kong/kong.yml:/kong/declarative/kong.yml:ro
+    depends_on:
+      - user-service
+      - composite-service
+      - activity-service
+      - ai-recommender-composite-service
+
+  # Legacy gateway retained for reference only.
+  # It is disabled by default and only starts when profile `legacy-gateway` is enabled.
+  api-gateway-legacy:
+    profiles: ["legacy-gateway"]
+    build: ./api-gateway
+    container_name: api-gateway-legacy
+    ports:
+      - "8008:8000"
     environment:
       - COMPOSITE_URL=http://composite-service:8000
+      - AI_RECOMMENDER_COMPOSITE_URL=http://ai-recommender-composite-service:8000
+      - ACTIVITY_URL=http://activity-service:8000
     depends_on:
+      - user-service
       - composite-service
+      - activity-service
+      - ai-recommender-composite-service
 
 
   user-service:
@@ -34,6 +64,13 @@ services:
       - foodorder-service
       - activity-service
       - notification-service
+
+  ai-recommender-composite-service:
+    build: ./composite-service/ai-recommender-composite-service
+    container_name: ai-recommender-composite-service
+    depends_on:
+      - quiz-service
+      - ai-recommendation-wrapper
 
   ai-recommendation-wrapper:
     build: ./wrappers/ai-recommendation-wrapper

@@ -16,7 +16,9 @@ app.add_middleware(
     SessionMiddleware,
     secret_key="supersecret123",
     https_only=False,
-    same_site="none",
+    # localhost frontend/backend are same-site across ports; Lax works on HTTP dev.
+    # SameSite=None typically requires Secure and can be rejected by browsers on HTTP.
+    same_site="lax",
 )
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")

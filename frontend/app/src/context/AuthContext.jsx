@@ -27,13 +27,19 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     const res = await loginUser(username, password);
-    if (res.success) setUser({ username });
+    if (res.success) {
+      const resolvedUsername = res.user?.username || res.username || username;
+      setUser({ username: resolvedUsername });
+    }
     return res;
   };
 
   const register = async (username, password) => {
     const res = await registerUser(username, password);
-    if (res.success) setUser({ username });
+    if (res.success) {
+      const resolvedUsername = res.user?.username || res.username || username;
+      setUser({ username: resolvedUsername });
+    }
     return res;
   };
 
