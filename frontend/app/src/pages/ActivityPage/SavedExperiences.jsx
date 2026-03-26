@@ -199,6 +199,7 @@ export default function SavedExperiences() {
   const navigate = useNavigate();
 
   const userName = "demo_user";
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetch(`http://localhost:8000/saved-experiences/${userName}`)
@@ -211,20 +212,49 @@ export default function SavedExperiences() {
         console.error("Saved experiences fetch error:", err);
         setLoading(false);
       });
-  }, []);
+  }, [userName]);
 
-  return (
+  useEffect(() => {
+    if (!message) return;
+
+    const timer = setTimeout(() => {
+      setMessage("");
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  const handleUnsave = async (activityId) => {
+    try {
+      const res = await fetch(
+        `http://localhost:8000/saved-activities/${userName}/${activityId}`,
+        { method: "DELETE" }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "Failed to unsave activity");
+      }
+
+      setActivities((prev) => prev.filter((activity) => activity.id !== activityId));
+      setMessage("Removed from saved ❌");
+    } catch (err) {
+      console.error("Unsave error:", err);
+      setMessage("Could not remove activity.");
+    }
+  };
+
+   return (
     <>
       <style>{styles}</style>
       <Layout>
         <div className="saved-root">
-
-          {/* BACK BUTTON */}
           <button
             className="saved-back"
             onClick={() => navigate("/activities")}
           >
-           ← Back to activities
+            ← Back to activities
           </button>
 
           <div className="saved-header">
@@ -235,11 +265,18 @@ export default function SavedExperiences() {
             </p>
           </div>
 
+          {message && <div className="saved-toast">{message}</div>}
+
           {loading ? (
             <div className="saved-loading">Loading your saved experiences...</div>
           ) : activities.length === 0 ? (
             <div className="saved-empty">
               You haven’t saved any experiences yet.
+              <div>
+                <button onClick={() => navigate("/activities")}>
+                  Explore activities
+                </button>
+              </div>
             </div>
           ) : (
             <div className="saved-grid">
@@ -271,7 +308,16 @@ export default function SavedExperiences() {
                       <div className="saved-price">
                         ${activity.price} <span>/ person</span>
                       </div>
-                      <span className="saved-arrow">View →</span>
+
+                      <button
+                        className="saved-remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUnsave(activity.id);
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                 </div>

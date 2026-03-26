@@ -301,6 +301,21 @@ const styles = `
     animation: shimmer 1.4s infinite;
   }
 
+  .detail-toast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #241c17;
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 999px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.16);
+    z-index: 1000;
+  }
+
   @keyframes shimmer {
     0% { background-position: 100% 0; }
     100% { background-position: -100% 0; }
@@ -342,6 +357,7 @@ export default function ActivityDetail() {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
 
   const userName = "demo_user";
   const navigate = useNavigate();
@@ -367,8 +383,18 @@ export default function ActivityDetail() {
         console.error("Saved status fetch error:", err);
       });
 
-    Promise.all([fetchActivity, fetchSavedStatus]).catch(() => { });
-  }, [id]);
+    Promise.all([fetchActivity, fetchSavedStatus]).catch(() => {});
+  }, [id, userName]);
+
+  useEffect(() => {
+    if (!message) return;
+
+    const timer = setTimeout(() => {
+      setMessage("");
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [message]);
 
   const handleSaveExperience = async () => {
     if (saving) return;
@@ -389,26 +415,26 @@ export default function ActivityDetail() {
         });
 
         const data = await res.json();
-        console.log("Save response:", data);
 
         if (!res.ok) {
           throw new Error(data.detail || "Failed to save activity");
         }
 
         setSaved(true);
+        setMessage("Saved to your experiences ✨");
       } else {
         const res = await fetch(`http://localhost:8000/saved-activities/${userName}/${id}`, {
           method: "DELETE",
         });
 
         const data = await res.json();
-        console.log("Unsave response:", data);
 
         if (!res.ok) {
           throw new Error(data.detail || "Failed to unsave activity");
         }
 
         setSaved(false);
+        setMessage("Removed from saved ❌");
       }
     } catch (error) {
       console.error("Error saving experience:", error);
@@ -437,7 +463,9 @@ export default function ActivityDetail() {
       <style>{styles}</style>
       <Layout>
         <div className="detail-root">
-          <button className="detail-back" onClick={() => window.history.back()}>
+          {message && <div className="detail-toast">{message}</div>}
+
+          <button className="detail-back" onClick={() => navigate("/activities")}>
             ← Back to activities
           </button>
 
