@@ -34,14 +34,12 @@ export const router = (user) =>
       element: <ActivityDetail />,
     },
     // AI quiz
-    {
-      path: "/quiz",
-      element: <Questionnaire />
+    { path: "/quiz", 
+      element: <Questionnaire /> 
     },
     // quiz result
-    {
-      path: "/quiz/result/:submissionId",
-      element: <Recommendation />
+    { path: "/quiz/result/:submissionId", 
+      element: <Recommendation /> 
     },
 
     {
