@@ -10,7 +10,7 @@ import Cart from "../pages/FoodPage/Cart.jsx";
 import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
 import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
-
+import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
   
 // Protected route wrapper
 const Protected = ({ user, children }) => {
@@ -57,6 +57,10 @@ export const router = (user) =>
     {
       path: "/saved-experiences",
       element: <SavedExperiences />
-    }
+    },
+    {
+      path: "/payment",
+      element: <PaymentPage />,
+    },
 ]);
 
