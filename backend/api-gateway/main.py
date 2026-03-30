@@ -151,6 +151,26 @@ async def create_booking(request: Request):
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
 
+@app.get("/booking/availability")
+async def get_booking_availability(start_time: str, end_time: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"{COMPOSITE_URL}/booking/availability",
+                params={"start_time": start_time, "end_time": end_time},
+                cookies=request.cookies,
+            )
+
+        try:
+            content = res.json()
+        except ValueError:
+            content = {"success": False, "message": res.text or "Invalid response from booking composite service"}
+
+        return JSONResponse(status_code=res.status_code, content=content)
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
 @app.post("/saved-activities")
 async def save_activity(request: Request):
     try:
