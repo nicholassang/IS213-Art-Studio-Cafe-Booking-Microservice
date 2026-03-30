@@ -45,11 +45,17 @@ async def handle_booking_confirmation_message(message: aio_pika.IncomingMessage)
             logger.exception("Discarding invalid booking confirmation message")
             return
 
-        await send_email_transaction_notification_wrapper(
-            event.user_email,
-            event.user_name,
-            event.message,
-        )
+        try:
+            await send_email_transaction_notification_wrapper(
+                event.user_email,
+                event.user_name,
+                event.message,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to send confirmation email to %s; message will be acked",
+                event.user_email,
+            )
 
 
 async def consume_booking_confirmation_events():

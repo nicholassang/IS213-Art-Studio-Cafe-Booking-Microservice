@@ -116,6 +116,7 @@ services:
     environment:
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      - RESEND_TEST_RECIPIENT=${RESEND_TEST_RECIPIENT:-nicholasang.sg@gmail.com}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       - rabbitmq
