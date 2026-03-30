@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+import aio_pika
 import httpx
+import json
+import logging
 import os
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -23,6 +26,11 @@ MENU_URL = "http://menu-service:8000"
 FOOD_ORDER_URL = "http://foodorder-service:8000"
 PAYMENT_URL = os.getenv("PAYMENT_URL", "http://payment-wrapper:8000")
 NOTIFICATION_URL = os.getenv("NOTIFICATION_URL", "http://notification-service:8000")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+BOOKING_EVENTS_EXCHANGE = "booking.events"
+BOOKING_CONFIRMED_ROUTING_KEY = "booking.confirmed"
+
+logger = logging.getLogger(__name__)
 
 
 class FoodItem(BaseModel):
@@ -42,6 +50,38 @@ class BookingRequest(BaseModel):
     additional_notes: Optional[str] = None
 
 
+async def get_slot_availability(client: httpx.AsyncClient, start_time: str, end_time: str) -> dict:
+    availability_resp = await client.get(
+        f"{ACTIVITY_URL}/bookings/availability",
+        params={"start_time": start_time, "end_time": end_time},
+    )
+
+    if availability_resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Failed to fetch slot availability")
+
+    return availability_resp.json()
+
+
+async def publish_booking_confirmation_event(event_payload: dict):
+    connection = await aio_pika.connect_robust(RABBITMQ_URL)
+
+    try:
+        channel = await connection.channel()
+        exchange = await channel.declare_exchange(
+            BOOKING_EVENTS_EXCHANGE,
+            aio_pika.ExchangeType.TOPIC,
+            durable=True,
+        )
+        message = aio_pika.Message(
+            body=json.dumps(event_payload).encode("utf-8"),
+            content_type="application/json",
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        )
+        await exchange.publish(message, routing_key=BOOKING_CONFIRMED_ROUTING_KEY)
+    finally:
+        await connection.close()
+
+
 @app.post("/booking")
 async def create_booking(payload: BookingRequest):
     async with httpx.AsyncClient() as client:
@@ -51,6 +91,9 @@ async def create_booking(payload: BookingRequest):
             raise HTTPException(status_code=404, detail="Activity not found")
 
         activity = activity_resp.json()
+        slot_availability = await get_slot_availability(client, payload.start_time, payload.end_time)
+        if slot_availability.get("remaining_slots", 0) <= 0:
+            raise HTTPException(status_code=409, detail="Selected slot is fully booked")
 
         # Validate requested food items and create food orders using food order service
         food_order_responses = []
@@ -129,29 +172,36 @@ async def create_booking(payload: BookingRequest):
         else:
             saved_booking = booking_save_resp.json()
 
-        notification_result = {"success": False, "message": "Notification not sent"}
+        notification_result = {"success": False, "queued": False, "message": "Confirmation email not queued"}
         try:
-            notification_resp = await client.post(
-                f"{NOTIFICATION_URL}/send-transaction-notification",
-                json={
-                    "to_email": payload.user_email,
-                    "username": payload.user_name,
+            booking_record = saved_booking.get("booking") if isinstance(saved_booking, dict) else None
+            await publish_booking_confirmation_event(
+                {
+                    "booking_id": (booking_record or {}).get("id") or (booking_record or {}).get("booking_id"),
+                    "user_email": payload.user_email,
+                    "user_name": payload.user_name,
+                    "activity_id": payload.activity_id,
+                    "activity_name": activity.get("name", ""),
+                    "start_time": payload.start_time,
+                    "end_time": payload.end_time,
+                    "total_amount": total_amount,
+                    "payment": payment,
                     "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${total_amount:.2f}",
-                },
+                }
             )
-            notification_body = None
-            try:
-                notification_body = notification_resp.json()
-            except ValueError:
-                notification_body = notification_resp.text
-
             notification_result = {
-                "success": notification_resp.status_code in (200, 201),
-                "status_code": notification_resp.status_code,
-                "response": notification_body,
+                "success": True,
+                "queued": True,
+                "message": "Confirmation email queued for delivery",
             }
-        except httpx.RequestError:
-            notification_result = {"success": False, "message": "Notification service unavailable"}
+        except Exception as exc:
+            logger.exception("Failed to publish booking confirmation event")
+            notification_result = {
+                "success": False,
+                "queued": False,
+                "message": "Booking confirmed but confirmation email could not be queued",
+                "error": str(exc),
+            }
 
         return {
             "success": True,
@@ -162,6 +212,31 @@ async def create_booking(payload: BookingRequest):
             "total_amount": total_amount,
             "notification": notification_result,
         }
+
+
+@app.get("/booking/availability")
+async def get_booking_availability(
+    start_time: str = Query(...),
+    end_time: str = Query(...),
+):
+    async with httpx.AsyncClient() as client:
+        availability_resp = await client.get(
+            f"{ACTIVITY_URL}/bookings/availability",
+            params={"start_time": start_time, "end_time": end_time},
+        )
+
+    try:
+        availability_body = availability_resp.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Invalid response from activity service")
+
+    if availability_resp.status_code != 200:
+        raise HTTPException(
+            status_code=availability_resp.status_code,
+            detail=availability_body.get("detail", "Failed to fetch slot availability"),
+        )
+
+    return availability_body
 
 #Activities link to activity service(atomic service)
 @app.get("/activities")
@@ -239,5 +314,3 @@ async def delete_food_order(order_id: int):
     async with httpx.AsyncClient() as client:
         res = await client.delete(f"{FOOD_ORDER_URL}/food-order/{order_id}")
     return res.json()
-
-

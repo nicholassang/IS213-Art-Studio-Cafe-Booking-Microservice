@@ -25,9 +25,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MAX_BOOKINGS_PER_SLOT = 20
+
 class SaveActivityRequest(BaseModel):
     user_name: str
     activity_id: str
+
+
+def get_slot_booking_count(start_time: str, end_time: str) -> int:
+    response = supabase.table("bookings") \
+        .select("activity_id") \
+        .eq("start_time", start_time) \
+        .eq("end_time", end_time) \
+        .neq("status", "cancelled") \
+        .execute()
+
+    return len(response.data or [])
 
 # Health check
 @app.get("/")
@@ -43,6 +56,14 @@ def get_activities():
 
 @app.post("/bookings")
 def create_booking(payload: dict):
+    start_time = payload.get("start_time")
+    end_time = payload.get("end_time")
+
+    if start_time and end_time:
+        booked_slots = get_slot_booking_count(start_time, end_time)
+        if booked_slots >= MAX_BOOKINGS_PER_SLOT:
+            raise HTTPException(status_code=409, detail="Selected slot is fully booked")
+
     # Store full booking record: user info, activity, time slot, food orders, payment
     booking_payload = {
         "user_name": payload.get("user_name"),
@@ -89,6 +110,21 @@ def create_booking(payload: dict):
         "success": True,
         "booking": response.data[0] if response.data else None,
         "omitted_columns": omitted_columns,
+    }
+
+
+@app.get("/bookings/availability")
+def get_booking_availability(start_time: str, end_time: str):
+    booked_slots = get_slot_booking_count(start_time, end_time)
+    remaining_slots = max(MAX_BOOKINGS_PER_SLOT - booked_slots, 0)
+
+    return {
+        "start_time": start_time,
+        "end_time": end_time,
+        "max_slots": MAX_BOOKINGS_PER_SLOT,
+        "booked_slots": booked_slots,
+        "remaining_slots": remaining_slots,
+        "is_full": remaining_slots == 0,
     }
 
 

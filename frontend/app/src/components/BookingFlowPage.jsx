@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import { getSlotAvailability } from "../api/calendar";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../services/apiClient";
 
@@ -16,6 +17,8 @@ export default function BookingPage() {
   const [selectedFood, setSelectedFood] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
   const [loadingBooking, setLoadingBooking] = useState(false);
+  const [loadingSlotAvailability, setLoadingSlotAvailability] = useState(false);
+  const [slotAvailability, setSlotAvailability] = useState(null);
   const [contactEmail, setContactEmail] = useState("");
   const { user } = useAuth();
 
@@ -49,7 +52,41 @@ export default function BookingPage() {
 
   const foodOptions = menuItems;
 
-  const handleBooking = () => {
+  const refreshSlotAvailability = async (slotInfo) => {
+    if (!slotInfo) {
+      setSlotAvailability(null);
+      return null;
+    }
+
+    setLoadingSlotAvailability(true);
+
+    try {
+      const availability = await getSlotAvailability(
+        slotInfo.start.toISOString(),
+        slotInfo.end.toISOString()
+      );
+      setSlotAvailability(availability);
+      return availability;
+    } catch (error) {
+      console.error("Could not load slot availability", error);
+      setSlotAvailability(null);
+      setStatusMessage("Unable to load slot availability right now.");
+      return null;
+    } finally {
+      setLoadingSlotAvailability(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedSlot) {
+      setSlotAvailability(null);
+      return;
+    }
+
+    refreshSlotAvailability(selectedSlot);
+  }, [selectedSlot]);
+
+  const handleBooking = async () => {
     if (!selectedActivity || !selectedSlot || !foodChoice) {
       alert("Please select activity, slot, and food first");
       return;
@@ -59,32 +96,40 @@ export default function BookingPage() {
       return;
     }
 
+    if (slotAvailability?.remaining_slots === 0) {
+      setStatusMessage("This slot is already full. Please choose a different time.");
+      return;
+    }
+
     setLoadingBooking(true);
 
-    const createBooking = async () => {
-      try {
-        const quantity = selectedFood[foodChoice.id] || 1;
-        const resp = await apiClient.post("/booking", {
-          user_name: user.username,
-          user_email: contactEmail,
-          activity_id: selectedActivity.id,
-          start_time: selectedSlot.start.toISOString(),
-          end_time: selectedSlot.end.toISOString(),
-          food_items: [{ id: foodChoice.id, quantity, comment: "" }],
-          payment_method: "card",
-        });
+    try {
+      const quantity = selectedFood[foodChoice.id] || 1;
+      const resp = await apiClient.post("/booking", {
+        user_name: user.username,
+        user_email: contactEmail,
+        activity_id: selectedActivity.id,
+        start_time: selectedSlot.start.toISOString(),
+        end_time: selectedSlot.end.toISOString(),
+        food_items: [{ id: foodChoice.id, quantity, comment: "" }],
+        payment_method: "card",
+      });
 
-        setBookingId(resp.data.booking?.booking?.id || `BK-${Date.now()}`);
-        setStatusMessage("Booking completed. Email sent.");
-      } catch (error) {
-        console.error("Booking request failed", error);
-        setStatusMessage("Failed to complete booking. Please try again.");
-      } finally {
-        setLoadingBooking(false);
-      }
-    };
-
-    createBooking();
+      setBookingId(resp.data.booking?.booking?.id || `BK-${Date.now()}`);
+      setStatusMessage(
+        resp.data.notification?.queued
+          ? "Booking completed. Confirmation email queued."
+          : "Booking completed, but the confirmation email could not be queued."
+      );
+      await refreshSlotAvailability(selectedSlot);
+    } catch (error) {
+      console.error("Booking request failed", error);
+      const backendMessage = error.response?.data?.detail || error.response?.data?.message;
+      setStatusMessage(backendMessage || "Failed to complete booking. Please try again.");
+      await refreshSlotAvailability(selectedSlot);
+    } finally {
+      setLoadingBooking(false);
+    }
   };
 
   const toggleFoodQuantity = (foodId, delta) => {
@@ -151,6 +196,20 @@ export default function BookingPage() {
           }
           height="auto"
         />
+        <div className="slot-availability-card">
+          <p>
+            <strong>Selected slot:</strong>{" "}
+            {selectedSlot
+              ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}`
+              : "Choose a 1 hour slot to see availability."}
+          </p>
+          {loadingSlotAvailability && <p>Loading slot availability...</p>}
+          {!loadingSlotAvailability && selectedSlot && slotAvailability && (
+            <p className={slotAvailability.is_full ? "slot-full" : "slot-open"}>
+              {slotAvailability.remaining_slots} of {slotAvailability.max_slots} slots left
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Food & Summary */}
@@ -182,9 +241,10 @@ export default function BookingPage() {
           />
           <p><strong>Activity:</strong> {selectedActivity?.name || "Not selected"}</p>
           <p><strong>Slot:</strong> {selectedSlot ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}` : "Not selected"}</p>
+          <p><strong>Slots Left:</strong> {slotAvailability ? slotAvailability.remaining_slots : "Select a slot"}</p>
           <p><strong>Food:</strong> {foodChoice?.name || "Not selected"}</p>
           <p><strong>Total:</strong> ${total.toFixed(2)}</p>
-          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking}>
+          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking || slotAvailability?.is_full}>
             {loadingBooking ? "Processing..." : "Confirm & Pay"}
           </button>
           {bookingId && <p className="confirmation">✅ Booking Confirmed! ID: {bookingId}</p>}
@@ -246,6 +306,21 @@ export default function BookingPage() {
           border-radius: 16px;
           background: var(--surface);
           border: 1px solid var(--line);
+        }
+        .slot-availability-card {
+          margin-top: 16px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          background: var(--surface);
+          border: 1px solid var(--line);
+        }
+        .slot-open {
+          color: var(--accent-deep);
+          font-weight: 700;
+        }
+        .slot-full {
+          color: #b42318;
+          font-weight: 700;
         }
         .confirmation {
           margin-top: 10px;

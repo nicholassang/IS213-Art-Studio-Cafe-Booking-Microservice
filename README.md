@@ -1,113 +1,154 @@
-# IS213 Art Studio Cafe Booking Microservice
+# IS213 Art Studio Cafe Booking Microservice
 
-A sample micro‑service application built for the Enterprise Solutions Development
-(IS213) course.  The system consists of a React frontend and a set of Python
-FastAPI backend services orchestrated with Docker Compose.
+Microservice-based booking platform for an art studio cafe. The project includes a React frontend, FastAPI backend services, Kong for routing, and RabbitMQ for asynchronous booking confirmation emails.
 
-## Note to Contributors
-- Remember to branch from main, and only merge with main if there's no broken functionality or merge conflicts
-- Follow how the frontend make calls to the backend, and how it flows into its taomic microservices
-- Currently, API Gateway and Composite has the same API endpoints (we can add more composites if it makes sense)
-- There is no DB yet, all data store in-memory, meaning that they will be wiped whenever you refresh
-- Easy Log In:
-Username: test
-Password: test
+## Contributor Notes
+
+- Branch from `main` and only merge working changes.
+- Follow the existing flow from frontend -> Kong -> composite service -> atomic services.
+- Easy login for local testing:
+    - Username: `test`
+    - Password: `test`
 
 ## Project Structure
 
-```
-/                            # workspace root
-├─ backend/                  # Python micro‑services and compose config
-│  ├─ api-gateway/           # reverse proxy & routing layer
-│  ├─ composite-service/     # aggregates other services (auth, bookings, etc.)
-│  ├─ services/              # individual micro‑services
-│  │  ├─ auth-service/       # user authentication
-│  │  ├─ booking-service/    # stores bookings
-│  │  ├─ calendar-service/   # availability checking
-│  │  ├─ art-supply-service/ # external reservation stub
-│  │  └─ food-order-service/ # external order stub
-│  ├─ docker-compose.yaml    # development orchestrator
-│  └─ server.py              # legacy/monolith placeholder
-└─ frontend/                 # React application
-   └─ app/                   # Vite project
-      ├─ src/                # source code
-      │  ├─ app/             # entrypoint and routing
-      │  ├─ features/        # auth & bookings logic
-      │  ├─ pages/           # UI pages (Home, Login, Booking, …)
-      │  └─ services/        # shared HTTP client, etc.
-      └─ public/             # static assets
+```text
+.
+├─ backend/
+│  ├─ docker-compose.yaml
+│  ├─ api-gateway/
+│  │  ├─ Dockerfile
+│  │  ├─ main.py
+│  │  └─ requirements.txt
+│  ├─ composite-service/
+│  │  ├─ ai-reccomendation-composite-service/
+│  │  ├─ ai-recommender-composite-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  ├─ make-booking-composite-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  └─ process-payment-composite-service/
+│  ├─ kong/
+│  │  └─ kong.yml
+│  ├─ services/
+│  │  ├─ activity-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ images/
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  ├─ calendar-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  ├─ foodOrder-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  ├─ models.py
+│  │  │  └─ requirements.txt
+│  │  ├─ menu-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  ├─ notification_service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  ├─ quiz-service/
+│  │  │  ├─ Dockerfile
+│  │  │  ├─ main.py
+│  │  │  └─ requirements.txt
+│  │  └─ user-service/
+│  │     ├─ Dockerfile
+│  │     ├─ main.py
+│  │     ├─ models.py
+│  │     └─ requirements.txt
+│  └─ wrappers/
+│     ├─ ai-recommendation-wrapper/
+│     │  ├─ Dockerfile
+│     │  ├─ main.py
+│     │  ├─ prompts.py
+│     │  └─ requirements.txt
+│     ├─ calendar_wrapper/
+│     │  └─ main.py
+│     ├─ notification_wrapper/
+│     │  └─ main.py
+│     └─ payment-wrapper/
+│        ├─ Dockerfile
+│        ├─ main.py
+│        └─ requirements.txt
+├─ frontend/
+│  └─ app/
+│     ├─ index.html
+│     ├─ package.json
+│     ├─ public/
+│     └─ src/
+│        ├─ api/
+│        ├─ app/
+│        ├─ components/
+│        ├─ context/
+│        ├─ pages/
+│        └─ services/
+├─ LICENSE
+└─ README.md
 ```
 
-## Running the Project (Development)
+## Architecture Summary
 
-The easiest way to launch the entire stack is with Docker Compose.  Make sure
-Docker Desktop is installed and running, then execute:
+- `frontend/app`: React + Vite UI.
+- `backend/kong`: public entrypoint on port `8000`.
+- `make-booking-composite-service`: coordinates booking, food order creation, payment, persistence, and confirmation email queueing.
+- `activity-service`: stores activities, saved activities, bookings, and slot availability.
+- `notification_service`: consumes `booking.confirmed` events from RabbitMQ and sends email through Resend.
+- `payment-wrapper`: mock payment processor.
+- `rabbitmq`: broker for asynchronous booking confirmation emails.
+
+## Running the Project
+
+### Backend
 
 ```bash
 cd backend
-# rebuild services when code changes have been made
-# NOTE: you will need Docker Desktop to be running as well
 docker compose down
 docker compose up --build
 ```
 
-This will start all backend containers with the following ports exposed to the
-host:
-
-- `8000` – API gateway (also frontend proxy target)
-- `8001` – booking service (debug only)
-- `8002` – calendar service (debug only)
-- `8003` – art‑supply service (debug only)
-- `8004` – food‑order service (debug only)
-- `8005` – auth service (debug only)
-
-Use the frontend dev server for the UI:
+### Frontend
 
 ```bash
 cd frontend/app
-npm install        # first time only
-npm run dev        # starts Vite on http://localhost:5173
+npm install
+npm run dev
 ```
 
-The React app is configured to send requests to `http://localhost:8000`, which
-is the gateway.  Backend cookies and sessions are handled automatically via
-`withCredentials: true` in the HTTP client.
+Frontend runs on `http://localhost:5173` and sends requests to `http://localhost:8000`.
 
-### Manual service startup
+## Exposed Ports
 
-If you prefer running services individually (for debugging):
+- `8000`: Kong proxy
+- `8001`: Kong admin API
+- `8005`: user-service
+- `8006`: ai-recommendation-wrapper
+- `8007`: payment-wrapper
+- `8010`: notification-service
+- `8011`: activity-service
+- `8012`: quiz-service
+- `8013`: menu-service
+- `8014`: foodorder-service
+- `5672`: RabbitMQ AMQP
+- `15672`: RabbitMQ management UI
 
-```bash
-# example for composite service
-cd backend/composite-service
-python -m uvicorn main:app --reload --port 8001
-```
+## Booking Flow Notes
 
-Change the appropriate `COMPOSITE_URL` environment variable in
-`api-gateway/main.py` or set it when launching the gateway.
-
-## Testing endpoints
-
-The frontend provides UI pages for registration, login, and booking.  You can
-also exercise the API directly with `curl` or Python `requests`:
-
-```python
-import requests
-r = requests.post('http://localhost:8000/register', json={
-    'username':'foo','password':'bar'
-})
-print(r.json())
-```
-
-## Register
-- I am using a Hash-based password, minimum length 4 for both username and password. There is a max length (maybe) as well.
+- Booking confirmation emails are published as `booking.confirmed` events and processed asynchronously.
+- Slot availability is calculated from persisted bookings in the backend.
+- Each 1-hour slot has a maximum capacity of `20` bookings.
 
 ## Notes
 
-- CORS middleware is enabled on the gateway and every service to simplify
-development.
-- Sessions are managed via signed cookies using Starlette's
-`SessionMiddleware`.
-- The calendar, art‑supply and food‑order services are stubs that always
-return success; they exist to demonstrate the micro‑service pattern.
+- Activity and food-order data are persisted through Supabase-backed services.
+- The calendar service currently remains a lightweight stub; slot availability is enforced through the booking flow.
+- CORS is enabled across the local development stack for the frontend dev server.
 
