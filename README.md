@@ -60,7 +60,7 @@ flowchart LR
         NOTIF --> RESEND[Resend]
         RESEND --> CUSTOMER[User Email Inbox]
 
-        QMAIN -.->|booking.confirmed.dead (on reject/nack)| QDLQ[[booking.confirmation.dlq.v2]]
+        QMAIN -.->|booking.confirmed.dead reject_nack| QDLQ[[booking.confirmation.dlq.v2]]
 ```
 
 ### Request Routing via Kong
