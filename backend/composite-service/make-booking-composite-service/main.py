@@ -186,6 +186,7 @@ async def create_booking(payload: BookingRequest):
                     "activity_name": activity.get("name", ""),
                     "start_time": payload.start_time,
                     "end_time": payload.end_time,
+                    "food_orders": food_order_responses,
                     "total_amount": total_amount,
                     "payment": payment,
                     "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${total_amount:.2f}",
