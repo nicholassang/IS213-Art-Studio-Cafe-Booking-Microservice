@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
+from typing import Optional
 
 app = FastAPI()
 
@@ -152,12 +153,14 @@ async def create_booking(request: Request):
 
 
 @app.get("/booking/availability")
-async def get_booking_availability(start_time: str, end_time: str, request: Request):
+async def get_booking_availability(start_time: str, end_time: str, request: Request, activity_id: str):
     try:
         async with httpx.AsyncClient() as client:
+            params = {"start_time": start_time, "end_time": end_time, "activity_id": activity_id}
+
             res = await client.get(
                 f"{COMPOSITE_URL}/booking/availability",
-                params={"start_time": start_time, "end_time": end_time},
+                params=params,
                 cookies=request.cookies,
             )
 

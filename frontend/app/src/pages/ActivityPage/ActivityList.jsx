@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
+import apiClient from "../../services/apiClient";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -294,9 +295,9 @@ export default function ActivityList() {
   useEffect(() => {
     const startTime = Date.now();
 
-    fetch("http://localhost:8000/getAllActivities")
-      .then(res => res.json())
-      .then(data => {
+    apiClient.get("/activities")
+      .then((res) => {
+        const data = res.data || {};
         const elapsed = Date.now() - startTime;
         const delay = Math.max(400 - elapsed, 0);
 
