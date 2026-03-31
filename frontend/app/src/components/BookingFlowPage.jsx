@@ -10,7 +10,6 @@ import apiClient from "../services/apiClient";
 export default function BookingPage() {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [foodChoice, setFoodChoice] = useState(null);
   const [bookingId, setBookingId] = useState(null);
   const [activities, setActivities] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
@@ -52,8 +51,8 @@ export default function BookingPage() {
 
   const foodOptions = menuItems;
 
-  const refreshSlotAvailability = async (slotInfo) => {
-    if (!slotInfo) {
+  const refreshSlotAvailability = async (slotInfo, activityInfo = selectedActivity) => {
+    if (!slotInfo || !activityInfo?.id) {
       setSlotAvailability(null);
       return null;
     }
@@ -63,7 +62,8 @@ export default function BookingPage() {
     try {
       const availability = await getSlotAvailability(
         slotInfo.start.toISOString(),
-        slotInfo.end.toISOString()
+        slotInfo.end.toISOString(),
+        activityInfo.id
       );
       setSlotAvailability(availability);
       return availability;
@@ -78,17 +78,21 @@ export default function BookingPage() {
   };
 
   useEffect(() => {
-    if (!selectedSlot) {
+    if (!selectedSlot || !selectedActivity?.id) {
       setSlotAvailability(null);
       return;
     }
 
-    refreshSlotAvailability(selectedSlot);
-  }, [selectedSlot]);
+    refreshSlotAvailability(selectedSlot, selectedActivity);
+  }, [selectedSlot, selectedActivity]);
 
   const handleBooking = async () => {
-    if (!selectedActivity || !selectedSlot || !foodChoice) {
-      alert("Please select activity, slot, and food first");
+    const orderedFoodItems = Object.entries(selectedFood)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([foodId, quantity]) => ({ id: Number(foodId), quantity, comment: "" }));
+
+    if (!selectedActivity || !selectedSlot || orderedFoodItems.length === 0) {
+      alert("Please select activity, slot, and at least one food item first");
       return;
     }
     if (!user?.username) {
@@ -104,14 +108,13 @@ export default function BookingPage() {
     setLoadingBooking(true);
 
     try {
-      const quantity = selectedFood[foodChoice.id] || 1;
       const resp = await apiClient.post("/booking", {
         user_name: user.username,
         user_email: contactEmail,
         activity_id: selectedActivity.id,
         start_time: selectedSlot.start.toISOString(),
         end_time: selectedSlot.end.toISOString(),
-        food_items: [{ id: foodChoice.id, quantity, comment: "" }],
+        food_items: orderedFoodItems,
         payment_method: "card",
       });
 
@@ -126,7 +129,7 @@ export default function BookingPage() {
       console.error("Booking request failed", error);
       const backendMessage = error.response?.data?.detail || error.response?.data?.message;
       setStatusMessage(backendMessage || "Failed to complete booking. Please try again.");
-      await refreshSlotAvailability(selectedSlot);
+      await refreshSlotAvailability(selectedSlot, selectedActivity);
     } finally {
       setLoadingBooking(false);
     }
@@ -134,8 +137,24 @@ export default function BookingPage() {
 
   const toggleFoodQuantity = (foodId, delta) => {
     setSelectedFood((prev) => {
-      const next = Math.max(1, (prev[foodId] || 1) + delta);
-      return { ...prev, [foodId]: next };
+      const current = prev[foodId] || 0;
+      const nextQuantity = current + delta;
+
+      if (nextQuantity <= 0) {
+        const updated = { ...prev };
+        delete updated[foodId];
+        return updated;
+      }
+
+      return { ...prev, [foodId]: nextQuantity };
+    });
+  };
+
+  const removeFoodItem = (foodId) => {
+    setSelectedFood((prev) => {
+      const updated = { ...prev };
+      delete updated[foodId];
+      return updated;
     });
   };
 
@@ -143,6 +162,14 @@ export default function BookingPage() {
     const foodItem = menuItems.find((item) => item.id === Number(foodId));
     return sum + (foodItem?.price || 0) * qty;
   }, 0);
+
+  const selectedFoodEntries = Object.entries(selectedFood)
+    .filter(([, qty]) => qty > 0)
+    .map(([foodId, qty]) => {
+      const item = menuItems.find((food) => food.id === Number(foodId));
+      return item ? { ...item, quantity: qty } : null;
+    })
+    .filter(Boolean);
 
   return (
     <div className="booking-page">
@@ -219,15 +246,38 @@ export default function BookingPage() {
           {foodOptions.map((food) => (
             <div
               key={food.id || food.name}
-              className={`food-card ${foodChoice?.id === food.id ? "selected" : ""}`}
-              onClick={() => { setFoodChoice(food); setSelectedFood((prev) => ({ ...prev, [food.id]: prev[food.id] || 1 })); }}
+              className={`food-card ${(selectedFood[food.id] || 0) > 0 ? "selected" : ""}`}
+              onClick={() => toggleFoodQuantity(food.id, 1)}
             >
               <img src={food.image_url} alt={food.name} className="food-image" />
               <h3>{food.name}</h3>
               <p>${food.price?.toFixed(2) || "0.00"}</p>
+              <div className="food-qty-controls" onClick={(e) => e.stopPropagation()}>
+                <button type="button" onClick={() => toggleFoodQuantity(food.id, -1)}>-</button>
+                <span>{selectedFood[food.id] || 0}</span>
+                <button type="button" onClick={() => toggleFoodQuantity(food.id, 1)}>+</button>
+                <button type="button" className="remove-btn" onClick={() => removeFoodItem(food.id)}>Remove</button>
+              </div>
             </div>
           ))}
         </div>
+
+        {selectedFoodEntries.length > 0 && (
+          <div className="cart-preview">
+            <h4>Selected Food</h4>
+            {selectedFoodEntries.map((item) => (
+              <div key={item.id} className="cart-row">
+                <span>{item.name}</span>
+                <div className="food-qty-controls">
+                  <button type="button" onClick={() => toggleFoodQuantity(item.id, -1)}>-</button>
+                  <span>{item.quantity}</span>
+                  <button type="button" onClick={() => toggleFoodQuantity(item.id, 1)}>+</button>
+                  <button type="button" className="remove-btn" onClick={() => removeFoodItem(item.id)}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="summary-card">
           <h3>Booking Summary</h3>
@@ -242,9 +292,9 @@ export default function BookingPage() {
           <p><strong>Activity:</strong> {selectedActivity?.name || "Not selected"}</p>
           <p><strong>Slot:</strong> {selectedSlot ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}` : "Not selected"}</p>
           <p><strong>Slots Left:</strong> {slotAvailability ? slotAvailability.remaining_slots : "Select a slot"}</p>
-          <p><strong>Food:</strong> {foodChoice?.name || "Not selected"}</p>
+          <p><strong>Food:</strong> {selectedFoodEntries.length > 0 ? selectedFoodEntries.map((item) => `${item.name} x${item.quantity}`).join(", ") : "Not selected"}</p>
           <p><strong>Total:</strong> ${total.toFixed(2)}</p>
-          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking || slotAvailability?.is_full}>
+          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking || slotAvailability?.is_full || selectedFoodEntries.length === 0}>
             {loadingBooking ? "Processing..." : "Confirm & Pay"}
           </button>
           {bookingId && <p className="confirmation">✅ Booking Confirmed! ID: {bookingId}</p>}
@@ -299,6 +349,36 @@ export default function BookingPage() {
           object-fit: cover;
           border-radius: 8px;
           margin-bottom: 6px;
+        }
+        .food-qty-controls {
+          margin-top: 8px;
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .food-qty-controls button {
+          border: 1px solid var(--line);
+          background: var(--surface);
+          border-radius: 8px;
+          padding: 4px 10px;
+          cursor: pointer;
+        }
+        .food-qty-controls .remove-btn {
+          border-color: #b42318;
+          color: #b42318;
+        }
+        .cart-preview {
+          margin-top: 16px;
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 12px;
+        }
+        .cart-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 6px 0;
         }
         .summary-card {
           margin-top: 20px;

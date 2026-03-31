@@ -50,10 +50,12 @@ class BookingRequest(BaseModel):
     additional_notes: Optional[str] = None
 
 
-async def get_slot_availability(client: httpx.AsyncClient, start_time: str, end_time: str) -> dict:
+async def get_slot_availability(client: httpx.AsyncClient, start_time: str, end_time: str, activity_id: str) -> dict:
+    params = {"start_time": start_time, "end_time": end_time, "activity_id": activity_id}
+
     availability_resp = await client.get(
         f"{ACTIVITY_URL}/bookings/availability",
-        params={"start_time": start_time, "end_time": end_time},
+        params=params,
     )
 
     if availability_resp.status_code != 200:
@@ -91,7 +93,7 @@ async def create_booking(payload: BookingRequest):
             raise HTTPException(status_code=404, detail="Activity not found")
 
         activity = activity_resp.json()
-        slot_availability = await get_slot_availability(client, payload.start_time, payload.end_time)
+        slot_availability = await get_slot_availability(client, payload.start_time, payload.end_time, payload.activity_id)
         if slot_availability.get("remaining_slots", 0) <= 0:
             raise HTTPException(status_code=409, detail="Selected slot is fully booked")
 
@@ -218,11 +220,14 @@ async def create_booking(payload: BookingRequest):
 async def get_booking_availability(
     start_time: str = Query(...),
     end_time: str = Query(...),
+    activity_id: str = Query(...),
 ):
     async with httpx.AsyncClient() as client:
+        params = {"start_time": start_time, "end_time": end_time, "activity_id": activity_id}
+
         availability_resp = await client.get(
             f"{ACTIVITY_URL}/bookings/availability",
-            params={"start_time": start_time, "end_time": end_time},
+            params=params,
         )
 
     try:

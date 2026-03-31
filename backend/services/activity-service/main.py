@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
+from typing import Optional
 import re
 
 # Initialize Supabase client
@@ -32,15 +33,22 @@ class SaveActivityRequest(BaseModel):
     activity_id: str
 
 
-def get_slot_booking_count(start_time: str, end_time: str) -> int:
-    response = supabase.table("bookings") \
+def get_slot_booking_count(start_time: str, end_time: str, activity_id: Optional[str] = None) -> int:
+    query = supabase.table("bookings") \
         .select("activity_id") \
         .eq("start_time", start_time) \
         .eq("end_time", end_time) \
-        .neq("status", "cancelled") \
-        .execute()
+        .neq("status", "cancelled")
 
-    return len(response.data or [])
+    response = query.execute()
+    booking_rows = response.data or []
+
+    if activity_id is None:
+        return len(booking_rows)
+
+    # Compare as strings to handle activity_id stored as int/uuid/text consistently.
+    normalized_activity_id = str(activity_id)
+    return sum(1 for row in booking_rows if str(row.get("activity_id")) == normalized_activity_id)
 
 # Health check
 @app.get("/")
@@ -58,9 +66,13 @@ def get_activities():
 def create_booking(payload: dict):
     start_time = payload.get("start_time")
     end_time = payload.get("end_time")
+    activity_id = payload.get("activity_id")
+
+    if not activity_id:
+        raise HTTPException(status_code=400, detail="activity_id is required")
 
     if start_time and end_time:
-        booked_slots = get_slot_booking_count(start_time, end_time)
+        booked_slots = get_slot_booking_count(start_time, end_time, activity_id)
         if booked_slots >= MAX_BOOKINGS_PER_SLOT:
             raise HTTPException(status_code=409, detail="Selected slot is fully booked")
 
@@ -114,11 +126,12 @@ def create_booking(payload: dict):
 
 
 @app.get("/bookings/availability")
-def get_booking_availability(start_time: str, end_time: str):
-    booked_slots = get_slot_booking_count(start_time, end_time)
+def get_booking_availability(start_time: str, end_time: str, activity_id: str):
+    booked_slots = get_slot_booking_count(start_time, end_time, activity_id)
     remaining_slots = max(MAX_BOOKINGS_PER_SLOT - booked_slots, 0)
 
     return {
+        "activity_id": activity_id,
         "start_time": start_time,
         "end_time": end_time,
         "max_slots": MAX_BOOKINGS_PER_SLOT,

@@ -106,6 +106,7 @@ async def stop_rabbitmq_consumer():
     if connection and not connection.is_closed:
         await connection.close()
 
+# Legacy endpoint for testing email sending without RabbitMQ
 @app.post("/send-transaction-notification")
 async def send_notification(payload: NotificationRequest):
     try:
