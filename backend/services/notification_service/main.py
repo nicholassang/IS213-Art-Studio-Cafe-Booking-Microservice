@@ -14,8 +14,10 @@ app = FastAPI(title="Notification Service")
 logger = logging.getLogger(__name__)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 BOOKING_EVENTS_EXCHANGE = "booking.events"
-BOOKING_CONFIRMATION_QUEUE = "booking.confirmation.email"
+BOOKING_CONFIRMATION_QUEUE = os.getenv("BOOKING_CONFIRMATION_QUEUE", "booking.confirmation.email.v2")
 BOOKING_CONFIRMED_ROUTING_KEY = "booking.confirmed"
+BOOKING_CONFIRMATION_DLQ = os.getenv("BOOKING_CONFIRMATION_DLQ", "booking.confirmation.dlq.v2")
+BOOKING_CONFIRMATION_DLQ_ROUTING_KEY = os.getenv("BOOKING_CONFIRMATION_DLQ_ROUTING_KEY", "booking.confirmed.dead")
 
 class NotificationRequest(BaseModel):
     to_email: str
@@ -84,13 +86,13 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
 
 
 async def handle_booking_confirmation_message(message: aio_pika.IncomingMessage):
-    async with message.process(ignore_processed=True):
+    async with message.process(ignore_processed=True, requeue=False):
         try:
             payload = json.loads(message.body.decode("utf-8"))
             event = BookingConfirmationEvent(**payload)
         except (json.JSONDecodeError, ValidationError):
-            logger.exception("Discarding invalid booking confirmation message")
-            return
+            logger.exception("Dead-lettering invalid booking confirmation message")
+            raise
 
         try:
             subject, html = build_booking_confirmation_email(event)
@@ -101,11 +103,17 @@ async def handle_booking_confirmation_message(message: aio_pika.IncomingMessage)
                 subject=subject,
                 html=html,
             )
-        except Exception:
-            logger.exception(
-                "Failed to send confirmation email to %s; message will be acked",
+            logger.info(
+                "Sent booking confirmation email for booking_id=%s to %s",
+                event.booking_id,
                 event.user_email,
             )
+        except Exception as exc:
+            logger.exception(
+                "Failed to send confirmation email to %s; dead-lettering message",
+                event.user_email,
+            )
+            raise exc
 
 
 async def consume_booking_confirmation_events():
@@ -121,7 +129,17 @@ async def consume_booking_confirmation_events():
                 aio_pika.ExchangeType.TOPIC,
                 durable=True,
             )
-            queue = await channel.declare_queue(BOOKING_CONFIRMATION_QUEUE, durable=True)
+            dlq = await channel.declare_queue(BOOKING_CONFIRMATION_DLQ, durable=True)
+            await dlq.bind(exchange, routing_key=BOOKING_CONFIRMATION_DLQ_ROUTING_KEY)
+
+            queue = await channel.declare_queue(
+                BOOKING_CONFIRMATION_QUEUE,
+                durable=True,
+                arguments={
+                    "x-dead-letter-exchange": BOOKING_EVENTS_EXCHANGE,
+                    "x-dead-letter-routing-key": BOOKING_CONFIRMATION_DLQ_ROUTING_KEY,
+                },
+            )
             await queue.bind(exchange, routing_key=BOOKING_CONFIRMED_ROUTING_KEY)
             await queue.consume(handle_booking_confirmation_message)
 
