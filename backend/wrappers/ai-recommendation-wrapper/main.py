@@ -14,6 +14,7 @@ from typing import Optional
 
 from prompts import QUIZ_SYSTEM_PROMPT
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,9 @@ async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _rabbitmq_healthy
 
     try:
+        logger.info(f"Connecting to RabbitMQ at {settings.rabbitmq_url}")
         _rabbitmq_connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+        logger.info("Connected to RabbitMQ")
 
         declare_channel = await _rabbitmq_connection.channel()
         consume_channel = await _rabbitmq_connection.channel()
@@ -89,6 +92,7 @@ async def lifespan(app: FastAPI):
         quiz_exchange = await declare_channel.declare_exchange(
             settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
         )
+        logger.info(f"Declared exchange: {settings.quiz_exchange}")
 
         dlq = await declare_channel.declare_queue(
             f"{settings.quiz_queue}.dead_letter", durable=True
@@ -102,13 +106,26 @@ async def lifespan(app: FastAPI):
             },
         )
         await queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
+        logger.info(f"Declared and bound queue: {settings.quiz_queue}")
 
-        consume_queue = await consume_channel.declare_queue(settings.quiz_queue, durable=True)
+        # Use the already declared queue for consuming (with same arguments)
+        consume_queue = await consume_channel.declare_queue(
+            settings.quiz_queue,
+            durable=True,
+            arguments={
+                "x-dead-letter-exchange": "",
+                "x-dead-letter-routing-key": dlq.name,
+            },
+        )
+        logger.info(f"Setting up consumer on queue: {settings.quiz_queue}")
         await consume_queue.consume(on_quiz_submitted)
+        logger.info("Consumer setup complete")
 
         _rabbitmq_healthy = True
+        logger.info("RabbitMQ setup complete - healthy")
 
-    except Exception:
+    except Exception as e:
+        logger.exception(f"RabbitMQ setup failed: {e}")
         _rabbitmq_healthy = False
 
     yield
@@ -182,8 +199,14 @@ async def post_to_orchestrator(event: QuizSubmittedEvent, recommendation: Recomm
         "submission_id": event.submission_id,
         "recommendation": recommendation.model_dump(),
     }
-    response = await http_client.post(settings.orchestrator_url, json=payload)
-    response.raise_for_status()
+    try:
+        response = await http_client.post(settings.orchestrator_url, json=payload)
+        response.raise_for_status()
+        logger.info(f"Recommendation sent to orchestrator for submission {event.submission_id}")
+    except httpx.HTTPError as e:
+        # Log but don't fail - orchestrator might not be available
+        logger.warning(f"Failed to send recommendation to orchestrator: {e}")
+        logger.info(f"Generated recommendation: activity={recommendation.activity}, confidence={recommendation.confidence}")
 
 
 # ---------------------------------------------------------------------------
