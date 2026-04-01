@@ -363,6 +363,24 @@ def _validate_answers(answers: list[AnswerIn]) -> None:
             )
 
 
+def _enrich_answers_with_text(answers: list[AnswerIn]) -> list[dict]:
+    """Add question and option text to each answer for the event payload."""
+    question_map = {q["question_id"]: q for q in QUESTION_BANK}
+    enriched = []
+    for answer in answers:
+        question = question_map[answer.question_id]
+        selected_option = next(
+            opt for opt in question["options"] if opt["option_id"] == answer.selected_option_id
+        )
+        enriched.append({
+            "question_id": answer.question_id,
+            "selected_option_id": answer.selected_option_id,
+            "question_text": question["text"],
+            "option_text": selected_option["text"],
+        })
+    return enriched
+
+
 def _find_question_index(question_id: str) -> Optional[int]:
     for i, q in enumerate(QUESTION_BANK):
         if q["question_id"] == question_id:
@@ -436,12 +454,13 @@ async def submit_answers(payload: QuizSubmission):
         raise HTTPException(status_code=500, detail="Failed to save submission.")
 
     # Publish event → consumed by Recommendation service
+    enriched_answers = _enrich_answers_with_text(payload.answers)
     await _publish(
         "quiz.submitted",
         {
             "submission_id": submission_id,
             "user_id": payload.user_id,
-            "answers": [a.model_dump() for a in payload.answers],
+            "answers": enriched_answers,
             "submitted_at": submitted_at,
         },
     )
