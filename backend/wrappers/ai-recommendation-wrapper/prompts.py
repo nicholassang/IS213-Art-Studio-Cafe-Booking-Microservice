@@ -7,6 +7,8 @@
 #   SCORING_SYSTEM_PROMPT        — system prompt for Call 1 (blind scoring)
 #   build_profile_system_prompt  — builds system prompt for Call 2 (profile write-up)
 #   AVAILABLE_ACTIVITIES         — all activities the café offers (AI picks from these)
+#   AVAILABLE_FOOD               — all food items the café offers (AI picks from these)
+#   AVAILABLE_DRINKS             — all drinks the café offers (AI picks from these)
 
 
 # ---------------------------------------------------------------------------
@@ -18,6 +20,30 @@ AVAILABLE_ACTIVITIES = [
     "Watercoloring",
     "Acrylic Painting",
     "Art Jamming",
+]
+
+# ---------------------------------------------------------------------------
+# Available food — AI must only recommend from this list
+# ---------------------------------------------------------------------------
+AVAILABLE_FOOD = [
+    "Avocado Toast",
+    "Beef Lasagne",
+    "Truffle Pasta",
+    "Caesar Salad",
+    "Chocolate Lava Cake",
+    "Tiramisu",
+    "Red Velvet Cake",
+    "Croissant",
+]
+
+# ---------------------------------------------------------------------------
+# Available drinks — AI must only recommend from this list
+# ---------------------------------------------------------------------------
+AVAILABLE_DRINKS = [
+    "Iced Latte",
+    "Mango Smoothie",
+    "Strawberry Lemonade",
+    "Hot Chocolate",
 ]
 
 
@@ -63,6 +89,8 @@ def build_profile_system_prompt(
     personality_type: str,
     scores: dict,
     disliked_activities: list[str] = [],
+    disliked_food: list[str] = [],
+    disliked_drinks: list[str] = [],
 ) -> str:
     type_descriptions = {
         "Craftsman": (
@@ -89,18 +117,31 @@ def build_profile_system_prompt(
 
     type_desc = type_descriptions.get(personality_type, "")
 
-    available = [a for a in AVAILABLE_ACTIVITIES if a not in disliked_activities]
-    disliked_str = (
-        f"The customer has said they dislike or want to avoid: {', '.join(disliked_activities)}. Do not recommend these."
+    available_activities = [a for a in AVAILABLE_ACTIVITIES if a not in disliked_activities]
+    available_food = [f for f in AVAILABLE_FOOD if f not in disliked_food]
+    available_drinks = [d for d in AVAILABLE_DRINKS if d not in disliked_drinks]
+
+    disliked_activities_str = (
+        f"The customer has said they dislike or want to avoid these activities: {', '.join(disliked_activities)}. Do not recommend these."
         if disliked_activities
         else "The customer has no stated activity dislikes."
+    )
+    disliked_food_str = (
+        f"The customer has said they dislike or want to avoid these foods: {', '.join(disliked_food)}. Do not recommend these."
+        if disliked_food
+        else "The customer has no stated food dislikes."
+    )
+    disliked_drinks_str = (
+        f"The customer has said they dislike or want to avoid these drinks: {', '.join(disliked_drinks)}. Do not recommend these."
+        if disliked_drinks
+        else "The customer has no stated drink dislikes."
     )
 
     return f"""
 You are a warm, insightful writer for Café De Paris, a creative café experience platform.
 
 Your job is to write a personalised personality profile for a customer based on their quiz responses,
-and recommend the 3 activities that best suit them.
+and recommend activities, food, and drinks that best suit them.
 
 The customer's personality type is: {personality_type}
 {type_desc}
@@ -109,17 +150,23 @@ Their axis scores:
 - Solo↔Social: {scores.get("solo_social_score")}/10 (0 = strongly solo, 10 = strongly social)
 - Structured↔Freeform: {scores.get("structured_freeform_score")}/10 (0 = strongly structured, 10 = strongly freeform)
 
-{disliked_str}
+{disliked_activities_str}
+{disliked_food_str}
+{disliked_drinks_str}
 
-You MUST choose exactly 3 activities to recommend, ranked from most to least suitable.
-You MUST only pick from this list — do not suggest any activity not on it:
-{available}
+You MUST choose exactly 3 activities, 2 food items, and 1 drink to recommend.
+You MUST only pick from these lists — do not suggest anything not on them:
+
+Activities: {available_activities}
+Food: {available_food}
+Drinks: {available_drinks}
 
 INSTRUCTIONS:
 - Write in second person ("You are...", "You tend to...", "You'd love...")
 - Be warm, specific, and personal — reference things the customer actually said in their answers
 - Do not write generic descriptions — every profile should feel written for this specific person
 - Explain all 3 recommended activities and why each suits this customer personally
+- Explain both food recommendations and the drink recommendation in 1–2 sentences each
 - The profile_body should be 3–4 sentences describing who this person is as a café-goer
 - Each activity explanation should be 2–3 sentences grounded in the customer's actual answers
 - The closing should be 1–2 warm, encouraging sentences to end on a positive note
@@ -146,6 +193,22 @@ Respond ONLY with valid JSON in exactly this format, with no preamble or markdow
       "explanation": "<2–3 sentences explaining why this activity suits this specific customer>"
     }}
   ],
+  "food_recommendations": [
+    {{
+      "rank": 1,
+      "food": "<food name exactly as written in the list above>",
+      "explanation": "<1–2 sentences explaining why this food suits this specific customer>"
+    }},
+    {{
+      "rank": 2,
+      "food": "<food name exactly as written in the list above>",
+      "explanation": "<1–2 sentences explaining why this food suits this specific customer>"
+    }}
+  ],
+  "drink_recommendation": {{
+    "drink": "<drink name exactly as written in the list above>",
+    "explanation": "<1–2 sentences explaining why this drink suits this specific customer>"
+  }},
   "closing": "<1–2 warm closing sentences>"
 }}
 """.strip()

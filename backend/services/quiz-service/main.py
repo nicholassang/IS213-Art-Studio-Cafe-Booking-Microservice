@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import random
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,6 +16,9 @@ from supabase import create_client, Client
 from question_bank import QUESTION_BANK
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ── Clients ───────────────────────────────────────────────────────────────
 supabase: Client = create_client(
@@ -41,15 +45,31 @@ TOTAL_QUESTIONS = QUESTIONS_PER_SECTION * len(CATEGORIES)  # 8
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _quiz_exchange
-    try:
-        _rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL)
-        channel = await _rabbitmq_connection.channel()
-        _quiz_exchange = await channel.declare_exchange(
-            QUIZ_EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True
-        )
-        print("Connected to RabbitMQ.")
-    except Exception as exc:
-        print(f"RabbitMQ unavailable – async events disabled. ({exc})")
+
+    # Retry RabbitMQ connection with backoff (handles startup race conditions)
+    max_retries = 10
+    retry_delay = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to RabbitMQ (attempt {attempt}/{max_retries})...")
+            _rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=10)
+            channel = await _rabbitmq_connection.channel()
+            _quiz_exchange = await channel.declare_exchange(
+                QUIZ_EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True
+            )
+            logger.info("Connected to RabbitMQ successfully.")
+            break
+        except Exception as exc:
+            if attempt < max_retries:
+                logger.warning(
+                    f"RabbitMQ connection failed (attempt {attempt}/{max_retries}): {exc}. "
+                    f"Retrying in {retry_delay}s..."
+                )
+                import asyncio
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"RabbitMQ unavailable after {max_retries} attempts – async events disabled. ({exc})")
+                _rabbitmq_connection = None
 
     yield
 
@@ -122,6 +142,7 @@ def _get_session_or_404(session_id: str) -> dict:
 
 async def _publish(routing_key: str, payload: dict) -> None:
     if _quiz_exchange is None:
+        logger.warning(f"Cannot publish to RabbitMQ - exchange not initialized (routing_key: {routing_key})")
         return
     try:
         await _quiz_exchange.publish(
@@ -132,8 +153,9 @@ async def _publish(routing_key: str, payload: dict) -> None:
             ),
             routing_key=routing_key,
         )
+        logger.info(f"Published message to '{QUIZ_EXCHANGE}' with routing key '{routing_key}'")
     except Exception as exc:
-        print(f"Failed to publish '{routing_key}': {exc}")
+        logger.error(f"Failed to publish '{routing_key}': {exc}")
 
 
 # ── Question bank endpoint ───────────────────────────────────────────────

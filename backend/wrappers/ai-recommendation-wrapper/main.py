@@ -20,6 +20,8 @@ from prompts import (
     SCORING_SYSTEM_PROMPT,
     build_profile_system_prompt,
     AVAILABLE_ACTIVITIES,
+    AVAILABLE_FOOD,
+    AVAILABLE_DRINKS,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -61,10 +63,6 @@ if settings.gemini_api_key:
     gemini_client = genai.Client(api_key=settings.gemini_api_key)
 
 _rabbitmq_connection = None
-# Fix #3: replaced simple bool with a proper connection-state check helper
-# so health reflects live connection state, not just startup success.
-
-# Fix #2: module-level shared HTTP client, cleaned up in lifespan shutdown.
 _service_client: Optional[httpx.AsyncClient] = None
 
 
@@ -95,6 +93,8 @@ class ProfileResult(BaseModel):
     profile_title: str
     profile_body: str
     activity_explanations: list[dict]
+    food_recommendations: list[dict]
+    drink_recommendation: dict
     closing: str
 
 
@@ -105,49 +105,65 @@ class ProfileResult(BaseModel):
 async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _service_client
 
-    # Fix #2: initialise the shared HTTP client here so it is always closed on shutdown.
     _service_client = httpx.AsyncClient(timeout=10.0)
 
-    try:
-        _rabbitmq_connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-        logger.info("Connected to RabbitMQ")
+    # Retry RabbitMQ connection with backoff (handles startup race conditions)
+    max_retries = 10
+    retry_delay = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to RabbitMQ (attempt {attempt}/{max_retries})...")
+            _rabbitmq_connection = await aio_pika.connect_robust(
+                settings.rabbitmq_url, timeout=10
+            )
+            logger.info("Connected to RabbitMQ")
 
-        declare_channel = await _rabbitmq_connection.channel()
-        consume_channel = await _rabbitmq_connection.channel()
-        await consume_channel.set_qos(prefetch_count=settings.prefetch_count)
+            declare_channel = await _rabbitmq_connection.channel()
+            consume_channel = await _rabbitmq_connection.channel()
+            await consume_channel.set_qos(prefetch_count=settings.prefetch_count)
 
-        quiz_exchange = await declare_channel.declare_exchange(
-            settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
-        )
+            quiz_exchange = await declare_channel.declare_exchange(
+                settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
+            )
 
-        dlq_name = f"{settings.quiz_queue}.dead_letter"
-        # Fix #5: DLQ is now explicitly bound to the default exchange via its
-        # queue name so messages routed there are always deliverable.
-        await declare_channel.declare_queue(dlq_name, durable=True)
+            dlq_name = f"{settings.quiz_queue}.dead_letter"
+            await declare_channel.declare_queue(dlq_name, durable=True)
 
-        queue_args = {
-            "x-dead-letter-exchange": "",
-            "x-dead-letter-routing-key": dlq_name,
-        }
+            # Delete existing queue if it has mismatched args, then redeclare
+            try:
+                await declare_channel.queue_delete(settings.quiz_queue)
+                logger.info(f"Deleted existing queue '{settings.quiz_queue}' (if existed)")
+            except Exception:
+                pass  # Queue may not exist yet
 
-        await declare_channel.declare_queue(
-            settings.quiz_queue, durable=True, arguments=queue_args
-        )
+            queue_args = {
+                "x-dead-letter-exchange": "",
+                "x-dead-letter-routing-key": dlq_name,
+            }
 
-        consume_queue = await consume_channel.declare_queue(
-            settings.quiz_queue, durable=True, arguments=queue_args
-        )
-        await consume_queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
-        await consume_queue.consume(on_quiz_submitted)
+            consume_queue = await declare_channel.declare_queue(
+                settings.quiz_queue, durable=True, arguments=queue_args
+            )
+            await consume_queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
+            await consume_queue.consume(on_quiz_submitted)
 
-        logger.info("RabbitMQ setup complete")
+            logger.info("RabbitMQ setup complete — consumer is listening")
+            break
 
-    except Exception as e:
-        logger.exception(f"RabbitMQ setup failed: {e}")
+        except Exception as e:
+            if attempt < max_retries:
+                logger.warning(
+                    f"RabbitMQ connection failed (attempt {attempt}/{max_retries}): {e}. "
+                    f"Retrying in {retry_delay}s..."
+                )
+                import asyncio
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.exception(f"RabbitMQ setup failed after {max_retries} attempts")
+                _rabbitmq_connection = None
 
     yield
 
-    # Fix #2: always close the shared HTTP client on shutdown.
     if _service_client:
         await _service_client.aclose()
 
@@ -162,10 +178,6 @@ app = FastAPI(lifespan=lifespan)
 # Connection health helper
 # ---------------------------------------------------------------------------
 def _rabbitmq_is_healthy() -> bool:
-    """
-    Fix #3: derive liveness from the actual connection object rather than a
-    stale boolean flag that is never updated after initial startup.
-    """
     return (
         _rabbitmq_connection is not None
         and not _rabbitmq_connection.is_closed
@@ -212,12 +224,7 @@ async def _call_ai(system_prompt: str, user_prompt: str, temperature: float) -> 
 
 
 def _parse_json_response(text: str) -> dict:
-    """
-    Fix #7: robustly extract the first JSON object from an AI response,
-    handling markdown fences, leading/trailing prose, and nested braces.
-    """
     text = text.strip()
-    # Try to find a JSON object anywhere in the response.
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError(f"No JSON object found in AI response: {text!r}")
@@ -256,6 +263,14 @@ def _extract_recommendations(profile: ProfileResult) -> list[str]:
     ]
 
 
+def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
+    """Extract ranked food names from profile food_recommendations."""
+    return [
+        item["food"]
+        for item in sorted(profile.food_recommendations, key=lambda x: x["rank"])
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Call 1 — Scoring (temperature: 0)
 # ---------------------------------------------------------------------------
@@ -276,11 +291,16 @@ async def generate_profile(
     answers: list[QuizAnswer],
     scores: ScoringResult,
     personality_type: str,
-    # Fix #6: mutable default replaced with None to avoid the shared-list gotcha.
     disliked_activities: Optional[list[str]] = None,
+    disliked_food: Optional[list[str]] = None,
+    disliked_drinks: Optional[list[str]] = None,
 ) -> ProfileResult:
     if disliked_activities is None:
         disliked_activities = []
+    if disliked_food is None:
+        disliked_food = []
+    if disliked_drinks is None:
+        disliked_drinks = []
 
     user_prompt = (
         "Customer's Quiz Responses:\n\n"
@@ -295,6 +315,8 @@ async def generate_profile(
         personality_type,
         scores.model_dump(),
         disliked_activities,
+        disliked_food,
+        disliked_drinks,
     )
     response_text = await _call_ai(system_prompt, user_prompt, temperature=0.7)
     return ProfileResult(**_parse_json_response(response_text))
@@ -310,22 +332,19 @@ async def store_result(
     scores: ScoringResult,
     personality_type: str,
     recommendations: list[str],
+    food_recommendations: list[str],
+    drink_recommendation: str,
     profile: ProfileResult,
 ) -> None:
     if not supabase_client:
         logger.warning("Supabase not configured — skipping storage")
         return
 
-    # Fix #10: confidence formula documented inline.
-    # Deviation from the midpoint (5) on each axis, normalised to [0, 1].
-    # A score of 0 or 10 → deviation 1.0 (very confident).
-    # A score of 5     → deviation 0.0 (ambiguous, lowest confidence).
-    # Base confidence of 0.60 ensures even ambiguous results are plausible.
-    # The 0.35 weight means a perfectly decisive result reaches 0.60 + 0.35 = 0.95.
     solo_deviation = abs(scores.solo_social_score - 5) / 5.0
     structured_deviation = abs(scores.structured_freeform_score - 5) / 5.0
     confidence = round(0.60 + ((solo_deviation + structured_deviation) / 2) * 0.35, 2)
 
+    # Only include columns that we know exist in the table
     record = {
         "submission_id": submission_id,
         "user_id": user_id,
@@ -348,41 +367,33 @@ async def store_result(
             logger.info(f"Stored result for {submission_id} (confidence: {confidence})")
         else:
             logger.warning(
-                f"Supabase returned empty for {submission_id} — some columns may be missing"
+                f"Supabase returned empty for {submission_id} — checking schema"
             )
     except Exception as e:
-        error_msg = str(e).lower()
-        if any(kw in error_msg for kw in ("column", "schema", "constraint", "violat", "400")):
-            try:
-                minimal_record = {
-                    "submission_id": submission_id,
-                    "user_id": user_id,
-                    "answers": [a.model_dump() for a in answers],
-                    "solo_social_score": scores.solo_social_score,
-                    "structured_freeform_score": scores.structured_freeform_score,
-                    "personality_type": personality_type,
-                    "recommendations": recommendations,
-                }
-                supabase_client.table("quiz_results").insert(minimal_record).execute()
-                logger.info(
-                    f"Stored minimal result for {submission_id} (some columns unavailable)"
-                )
-            except Exception as e2:
-                logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
-        else:
-            logger.error(f"Failed to store result for {submission_id}: {e}")
+        logger.error(f"Failed to store result for {submission_id}: {e}")
+        # Try an even more minimal record if the full one fails
+        try:
+            minimal_record = {
+                "submission_id": submission_id,
+                "user_id": user_id,
+                "answers": [a.model_dump() for a in answers],
+                "solo_social_score": scores.solo_social_score,
+                "structured_freeform_score": scores.structured_freeform_score,
+                "personality_type": personality_type,
+                "recommendations": recommendations,
+            }
+            supabase_client.table("quiz_results").insert(minimal_record).execute()
+            logger.info(
+                f"Stored minimal result for {submission_id} (some columns unavailable)"
+            )
+        except Exception as e2:
+            logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
 
 
 # ---------------------------------------------------------------------------
 # RabbitMQ consumer
 # ---------------------------------------------------------------------------
 async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
-    """
-    Fix #8: messages that raise an unexpected exception are nacked immediately
-    (requeue=False) and routed to the DLQ — there is no silent infinite retry.
-    Transient errors should be handled inside score_answers / generate_profile
-    with their own retry logic if needed.
-    """
     try:
         event = QuizSubmittedEvent(**json.loads(message.body.decode()))
         logger.info(f"Processing submission {event.submission_id} for user {event.user_id}")
@@ -394,11 +405,24 @@ async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
             f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
         )
 
-        disliked: list[str] = []  # populate from event.answers when dislike question is added
+        disliked_activities: list[str] = []
+        disliked_food: list[str] = []
+        disliked_drinks: list[str] = []
 
-        profile = await generate_profile(event.answers, scores, personality_type, disliked)
+        profile = await generate_profile(
+            event.answers, scores, personality_type,
+            disliked_activities, disliked_food, disliked_drinks,
+        )
         recommendations = _extract_recommendations(profile)
-        logger.info(f"Profile generated: {profile.profile_title} | Activities: {recommendations}")
+        food_recommendations = _extract_food_recommendations(profile)
+        drink_recommendation = profile.drink_recommendation.get("drink", "")
+
+        logger.info(
+            f"Profile generated: {profile.profile_title} | "
+            f"Activities: {recommendations} | "
+            f"Food: {food_recommendations} | "
+            f"Drink: {drink_recommendation}"
+        )
 
         await store_result(
             event.submission_id,
@@ -407,6 +431,8 @@ async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
             scores,
             personality_type,
             recommendations,
+            food_recommendations,
+            drink_recommendation,
             profile,
         )
 
@@ -426,10 +452,6 @@ QUIZ_COMPOSITE_URL = "http://ai-recommender-composite-service:8000"
 
 
 async def _get_service_client() -> httpx.AsyncClient:
-    """
-    Fix #2 & #9: return the module-level client that is guaranteed to exist
-    after lifespan startup. No more fragile is_closed check.
-    """
     if _service_client is None:
         raise RuntimeError("HTTP client not initialised — lifespan may not have run")
     return _service_client
@@ -445,9 +467,6 @@ async def recommend_submit(request: RecommendSubmitRequest):
     """
     Receive quiz answers, create a submission in Supabase,
     publish to RabbitMQ for async AI processing, return submission_id immediately.
-
-    Fix #4: Supabase write is fully confirmed before we publish to RabbitMQ,
-    so a storage failure never results in a queued event with no backing record.
     """
     submission_id = str(uuid.uuid4())
     submitted_at = datetime.now(timezone.utc).isoformat()
@@ -513,8 +532,6 @@ async def recommend_submit(request: RecommendSubmitRequest):
         raise HTTPException(status_code=500, detail=f"Failed to store submission: {str(e)}")
 
     # Step 3: Publish to RabbitMQ
-    # Fix #1: use async context manager so the channel is always closed,
-    # even if publish raises — prevents connection handle exhaustion under load.
     try:
         if not _rabbitmq_is_healthy():
             raise HTTPException(status_code=503, detail="AI recommendation service is unavailable")
@@ -575,6 +592,8 @@ async def recommend_preview(request: RecommendPreviewRequest):
         personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
         profile = await generate_profile(quiz_answers, scores, personality_type)
         recommendations = _extract_recommendations(profile)
+        food_recommendations = _extract_food_recommendations(profile)
+        drink_recommendation = profile.drink_recommendation.get("drink", "")
 
         return {
             "submission_id": submission_id,
@@ -585,6 +604,10 @@ async def recommend_preview(request: RecommendPreviewRequest):
             "profile_body": profile.profile_body,
             "recommendations": recommendations,
             "activity_explanations": profile.activity_explanations,
+            "food_recommendations": food_recommendations,
+            "food_recommendation_details": profile.food_recommendations,
+            "drink_recommendation": drink_recommendation,
+            "drink_recommendation_details": profile.drink_recommendation,
             "closing": profile.closing,
         }
     except Exception as e:
