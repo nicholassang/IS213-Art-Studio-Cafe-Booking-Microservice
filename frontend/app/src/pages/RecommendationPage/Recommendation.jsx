@@ -495,6 +495,54 @@ export default function RecommendationPage() {
   const [error, setError] = useState(null);
   const [confWidth, setConfWidth] = useState(0);
 
+  const normalizeConfidence = (value, fallback = 0.5) => {
+    const parsed = Number(value);
+    const normalized = Number.isFinite(parsed) ? (parsed > 1 ? parsed / 100 : parsed) : fallback;
+    return Math.max(0, Math.min(1, normalized));
+  };
+
+  const normalizeRankedActivities = (recommendation) => {
+    if (Array.isArray(recommendation?.activities) && recommendation.activities.length > 0) {
+      return recommendation.activities
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+    if (recommendation?.activity) {
+      return [String(recommendation.activity).trim()].filter(Boolean);
+    }
+    return [];
+  };
+
+  const findBestActivityMatch = (allActivities, recName) => {
+    const target = String(recName || "").trim().toLowerCase();
+    if (!target) return null;
+
+    const exact = allActivities.find((a) => (a.name || "").trim().toLowerCase() === target);
+    if (exact) return exact;
+
+    return allActivities.find((a) => {
+      const name = (a.name || "").trim().toLowerCase();
+      return name.includes(target) || target.includes(name);
+    }) || null;
+  };
+
+  const buildExplanationMap = (explanations) => {
+    const map = new Map();
+    if (!Array.isArray(explanations)) return map;
+
+    explanations.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const activity = String(item.activity || "").trim().toLowerCase();
+      const explanation = String(item.explanation || "").trim();
+      if (activity && explanation) {
+        map.set(activity, explanation);
+      }
+    });
+
+    return map;
+  };
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -509,18 +557,48 @@ export default function RecommendationPage() {
 
         const activitiesData = await activitiesRes.json();
         const allActivities = activitiesData.activities || [];
+        if (!allActivities.length) {
+          throw new Error("No activities available");
+        }
 
-        const recName = sub.recommendation?.activity || "";
-        const match = allActivities.find(a =>
-          a.name.toLowerCase().includes(recName.toLowerCase()) ||
-          recName.toLowerCase().includes(a.name.toLowerCase())
-        ) || allActivities[0];
+        const recommendation = sub.recommendation || {};
+        const rankedNames = normalizeRankedActivities(recommendation);
+        if (!rankedNames.length) {
+          throw new Error("Your recommendation is still being generated. Please refresh in a few seconds.");
+        }
+        const explanationsMap = buildExplanationMap(recommendation.explanations);
 
-        setRecommended({ ...match, aiReason: sub.recommendation?.reason, confidence: sub.recommendation?.confidence ?? 0.85 });
-        setOtherActivities(allActivities.filter(a => a.id !== match?.id).slice(0, 3));
+        const topName = rankedNames[0] || "";
+        const topMatch = findBestActivityMatch(allActivities, topName) || allActivities[0];
+        const confidence = normalizeConfidence(recommendation.confidence, 0.5);
+        const topReason = explanationsMap.get((topName || topMatch?.name || "").toLowerCase()) || recommendation.reason;
+
+        setRecommended({
+          ...topMatch,
+          aiReason: topReason,
+          confidence,
+        });
+
+        const usedIds = new Set([topMatch?.id]);
+        const secondaryCards = rankedNames.slice(1, 3)
+          .map((name) => {
+            const match = findBestActivityMatch(allActivities, name);
+            if (!match || usedIds.has(match.id)) return null;
+            usedIds.add(match.id);
+            return {
+              ...match,
+              aiReason: explanationsMap.get(name.toLowerCase()) || "",
+            };
+          })
+          .filter(Boolean);
+
+        const fallbackCards = allActivities
+          .filter((a) => !usedIds.has(a.id))
+          .slice(0, Math.max(0, 3 - secondaryCards.length));
+        setOtherActivities([...secondaryCards, ...fallbackCards]);
         setLoading(false);
 
-        setTimeout(() => setConfWidth((sub.recommendation?.confidence ?? 0.85) * 100), 200);
+        setTimeout(() => setConfWidth(confidence * 100), 200);
       } catch (e) {
         setError(e.message || "Something went wrong");
         setLoading(false);
@@ -555,7 +633,7 @@ export default function RecommendationPage() {
     </>
   );
 
-  const confidencePct = Math.round((recommended.confidence || 0.85) * 100);
+  const confidencePct = Math.round((recommended.confidence ?? 0.5) * 100);
 
   return (
     <>

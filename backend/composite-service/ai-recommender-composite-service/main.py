@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
@@ -25,9 +26,103 @@ AI_RECOMMENDATION_URL = "http://ai-recommendation-wrapper:8000"
 recommendations_store: List[Dict[str, Any]] = []
 
 
+def _normalize_recommendation_list(raw: Any) -> List[str]:
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()][:3]
+    if isinstance(raw, str) and raw.strip():
+        text = raw.strip()
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()][:3]
+            if isinstance(parsed, str):
+                return [parsed.strip()]
+        except json.JSONDecodeError:
+            if "|" in text:
+                return [part.strip() for part in text.split("|") if part.strip()][:3]
+            if "," in text:
+                return [part.strip() for part in text.split(",") if part.strip()][:3]
+            return [text]
+    return []
+
+
+def _normalize_confidence(raw: Any, fallback: float = 0.50) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = fallback
+    if value > 1:
+        value = value / 100.0
+    return max(0.0, min(1.0, value))
+
+
+def _pick_top_reason(recommendations: List[str], explanations: Any, profile_title: str) -> str:
+    if isinstance(explanations, list):
+        for item in explanations:
+            if not isinstance(item, dict):
+                continue
+            try:
+                rank = int(item.get("rank"))
+            except (TypeError, ValueError):
+                rank = None
+            activity = str(item.get("activity", "")).strip().lower()
+            reason = str(item.get("explanation", "")).strip()
+            if reason and rank == 1:
+                return reason
+            if reason and recommendations and activity == recommendations[0].strip().lower():
+                return reason
+    return profile_title
+
+
 # ---------------------------------------------------------------------------
 # Quiz routes
 # ---------------------------------------------------------------------------
+
+@app.post("/quiz/session")
+async def start_session(request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session", json=body)
+    return res.json()
+
+
+@app.get("/quiz/session/{session_id}")
+async def get_session(session_id: str):
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}")
+    return res.json()
+
+
+@app.post("/quiz/session/{session_id}/answer")
+async def submit_answer(session_id: str, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/answer", json=body)
+    return res.json()
+
+
+@app.put("/quiz/session/{session_id}/answer/{question_id}")
+async def edit_answer(session_id: str, question_id: str, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.put(f"{QUIZ_URL}/quiz/session/{session_id}/answer/{question_id}", json=body)
+    return res.json()
+
+
+@app.get("/quiz/session/{session_id}/progress")
+async def get_progress(session_id: str):
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}/progress")
+    return res.json()
+
+
+@app.post("/quiz/session/{session_id}/submit")
+async def submit_session(session_id: str, request: Request):
+    body = await request.json() if await request.body() else {}
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/submit", json=body)
+    return res.json()
+
 
 @app.get("/quiz/questions")
 async def get_questions(category: str = None):
@@ -70,8 +165,37 @@ async def get_user_submission(user_id: str):
 @app.get("/quiz/submissions/{submission_id}")
 async def get_submission(submission_id: str):
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/submissions/{submission_id}")
-    return res.json()
+        # Fetch raw submission from quiz service
+        sub_res = await client.get(f"{QUIZ_URL}/quiz/submissions/{submission_id}")
+        if sub_res.status_code != 200:
+            raise HTTPException(status_code=sub_res.status_code, detail=sub_res.text)
+        submission = sub_res.json()
+
+    # Fetch AI recommendation from wrapper
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            ai_res = await client.get(f"{AI_RECOMMENDATION_URL}/quiz/results/{submission_id}")
+            if ai_res.status_code == 200:
+                ai_data = ai_res.json()
+                # Build the recommendation object the frontend expects
+                rec_activity = _normalize_recommendation_list(ai_data.get("recommendations", []))
+                explanations = ai_data.get("activity_explanations", [])
+                top_reason = _pick_top_reason(rec_activity, explanations, ai_data.get("profile_title", ""))
+                submission["recommendation"] = {
+                    "activity": rec_activity[0] if rec_activity else "",
+                    "activities": rec_activity,
+                    "reason": top_reason,
+                    "confidence": _normalize_confidence(ai_data.get("confidence_score"), fallback=0.50),
+                    "personality_type": ai_data.get("personality_type", ""),
+                    "explanations": explanations,
+                    "profile_body": ai_data.get("profile_body", ""),
+                    "closing": ai_data.get("closing", ""),
+                }
+    except Exception:
+        # AI results may still be processing — return submission without recommendation
+        logger.warning(f"AI recommendation not yet available for {submission_id}")
+
+    return submission
 
 
 @app.put("/quiz/submissions/{submission_id}")
