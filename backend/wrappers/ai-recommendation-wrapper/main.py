@@ -283,6 +283,7 @@ async def store_result(
     drink_recommendation_details: dict,
     profile: ProfileResult,
     confidence: float,
+    submitted_at: str | None = None,
 ) -> None:
     if not supabase_client:
         logger.warning("Supabase not configured — skipping storage")
@@ -308,6 +309,7 @@ async def store_result(
         "closing": profile.closing,
         # FIX: confidence passed in from recommend() — no recalculation here
         "confidence_score": confidence,
+        "submitted_at": submitted_at,
     }
 
     try:
@@ -448,6 +450,7 @@ async def recommend(request: RecommendRequest):
                         closing=low_conf_result["closing"],
                     ),
                     confidence,
+                    request.submitted_at,
                 )
 
             return low_conf_result
@@ -479,6 +482,7 @@ async def recommend(request: RecommendRequest):
                 profile.drink_recommendation,
                 profile,
                 confidence,
+                request.submitted_at,
             )
 
         return {
@@ -526,6 +530,25 @@ async def get_quiz_results(submission_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to fetch results for {submission_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quiz/user-results")
+async def get_user_results(user_id: str):
+    """Fetch all AI-generated results for a given user from Supabase."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    try:
+        result = (
+            supabase_client.table("quiz_results")
+            .select("submission_id, personality_type, confidence_score")
+            .eq("user_id", user_id)
+            .order("submission_id", desc=True)
+            .execute()
+        )
+        return {"results": result.data or []}
+    except Exception as e:
+        logger.error(f"Failed to fetch results for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -10,6 +10,7 @@ import Cart from "../pages/FoodPage/Cart.jsx";
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
 import ResultPage from "../pages/RecommendationPage/ResultPage.jsx";
+import PastRecommendations from "../pages/RecommendationPage/PastRecommendations.jsx";
 
 const Protected = ({ user, children }) => {
   if (!user) return <Navigate to="/login" replace />;
@@ -39,6 +40,7 @@ export const router = (user, ChatWidget) =>
         { path: "/saved-experiences",         element: <SavedExperiences /> },
         { path: "/payment",                   element: <PaymentPage /> },
         { path: "/quiz/result/:submissionId", element: <ResultPage /> },
+        { path: "/my-recommendations",     element: <PastRecommendations /> },
       ],
     },
   ]);

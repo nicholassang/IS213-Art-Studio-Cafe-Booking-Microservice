@@ -76,10 +76,16 @@ async def get_progress(session_id: str):
 
 @app.get("/quiz/questions")
 async def get_questions(category: Optional[str] = None):
-    # FIX: use Optional[str] = None instead of str = None to avoid deprecation warning
     params = {"category": category} if category else {}
     async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
         res = await client.get(f"{QUIZ_URL}/quiz/questions", params=params)
+    return JSONResponse(content=res.json(), status_code=res.status_code)
+
+
+@app.get("/quiz/user-results")
+async def get_user_results(user_id: str):
+    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
+        res = await client.get(f"{AI_URL}/quiz/user-results", params={"user_id": user_id})
     return JSONResponse(content=res.json(), status_code=res.status_code)
 
 

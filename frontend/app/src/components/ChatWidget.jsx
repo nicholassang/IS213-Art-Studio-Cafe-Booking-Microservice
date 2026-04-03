@@ -361,8 +361,11 @@ export default function ChatWidget() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Stable user ID — never recomputed on re-render
-  const userId = useRef(getOrCreateUserId()).current;
+  // Stable guest ID — only used when logged out
+  const guestUserId = useRef(getOrCreateUserId()).current;
+
+  // Use real username when logged in, fallback to guest ID
+  const userId = user ? user.username : guestUserId;
 
   const [isOpen, setIsOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
