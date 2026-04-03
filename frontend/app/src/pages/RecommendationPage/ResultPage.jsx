@@ -442,6 +442,23 @@ export default function ResultPage() {
     let intervalId;
 
     const fetchResult = async () => {
+      // Check sessionStorage first — unauthenticated users won't have data in Supabase
+      const cached = sessionStorage.getItem(`quiz_result_${submissionId}`);
+      if (cached) {
+        const rec = JSON.parse(cached);
+        setResult(rec);
+        setLoading(false);
+        const confidence = rec.confidence_score || 0.6;
+        const solo = rec.scores?.solo_social || 5;
+        const structured = rec.scores?.structured_freeform || 5;
+        setTimeout(() => {
+          setConfWidth(Math.round(confidence * 100));
+          setSoloWidth((solo / 10) * 100);
+          setStructuredWidth((structured / 10) * 100);
+        }, 200);
+        return;
+      }
+
       try {
         const res = await fetch(`${API_GATEWAY}/quiz/submissions/${submissionId}`);
 
@@ -475,6 +492,9 @@ export default function ResultPage() {
         const rec = data.recommendation;
         setResult(rec);
         setLoading(false);
+
+        // Cache for page-refresh resilience
+        sessionStorage.setItem(`quiz_result_${submissionId}`, JSON.stringify(rec));
 
         // Animate bars after render
         const confidence = rec.confidence_score || 0.6;

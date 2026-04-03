@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
@@ -91,7 +91,7 @@ async def get_questions(category: Optional[str] = None):
 # ---------------------------------------------------------------------------
 
 @app.post("/quiz/session/{session_id}/submit")
-async def submit_and_recommend(session_id: str):
+async def submit_and_recommend(session_id: str, authenticated: bool = Query(default=True)):
     """
     Orchestrates the full flow:
     1. Submits the quiz session to the quiz atomic → receives Q&A payload
@@ -121,6 +121,7 @@ async def submit_and_recommend(session_id: str):
         "user_id": quiz_data["user_id"],
         "answers": quiz_data["answers"],
         "submitted_at": quiz_data["submitted_at"],
+        "is_authenticated": authenticated,
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:

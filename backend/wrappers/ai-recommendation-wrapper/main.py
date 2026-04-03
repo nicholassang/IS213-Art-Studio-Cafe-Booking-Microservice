@@ -86,6 +86,7 @@ class RecommendRequest(BaseModel):
     user_id: str
     answers: list[QuizAnswer] = Field(..., min_length=1)
     submitted_at: Optional[str] = None
+    is_authenticated: bool = True
 
 
 class ScoringResult(BaseModel):
@@ -425,28 +426,29 @@ async def recommend(request: RecommendRequest):
                 "confidence_score": confidence,
             }
 
-            # FIX: must store in Supabase so the GET /quiz/submissions/{id} polling endpoint can find it
-            await store_result(
-                request.submission_id,
-                request.user_id,
-                request.answers,
-                scores,
-                low_conf_result["personality_type"],
-                [],
-                [],
-                [],
-                "",
-                {},
-                ProfileResult(
-                    profile_title=low_conf_result["profile_title"],
-                    profile_body=low_conf_result["profile_body"],
-                    activity_explanations=[],
-                    food_recommendations=[],
-                    drink_recommendation={"drink": "", "explanation": ""},
-                    closing=low_conf_result["closing"],
-                ),
-                confidence,
-            )
+            # Only store results for authenticated users
+            if request.is_authenticated:
+                await store_result(
+                    request.submission_id,
+                    request.user_id,
+                    request.answers,
+                    scores,
+                    low_conf_result["personality_type"],
+                    [],
+                    [],
+                    [],
+                    "",
+                    {},
+                    ProfileResult(
+                        profile_title=low_conf_result["profile_title"],
+                        profile_body=low_conf_result["profile_body"],
+                        activity_explanations=[],
+                        food_recommendations=[],
+                        drink_recommendation={"drink": "", "explanation": ""},
+                        closing=low_conf_result["closing"],
+                    ),
+                    confidence,
+                )
 
             return low_conf_result
 
@@ -462,20 +464,22 @@ async def recommend(request: RecommendRequest):
             f"Drink: {drink_recommendation}"
         )
 
-        await store_result(
-            request.submission_id,
-            request.user_id,
-            request.answers,
-            scores,
-            personality_type,
-            recommendations,
-            food_recommendations,
-            profile.food_recommendations,
-            drink_recommendation,
-            profile.drink_recommendation,
-            profile,
-            confidence,
-        )
+        # Only store results for authenticated users
+        if request.is_authenticated:
+            await store_result(
+                request.submission_id,
+                request.user_id,
+                request.answers,
+                scores,
+                personality_type,
+                recommendations,
+                food_recommendations,
+                profile.food_recommendations,
+                drink_recommendation,
+                profile.drink_recommendation,
+                profile,
+                confidence,
+            )
 
         return {
             "submission_id": request.submission_id,

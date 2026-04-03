@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_GATEWAY, CATEGORY_LABELS, getOrCreateUserId } from "../constants";
+import { useAuth } from "../context/AuthContext";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
@@ -356,6 +357,7 @@ const styles = `
 
 export default function ChatWidget() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -530,11 +532,23 @@ export default function ChatWidget() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_GATEWAY}/quiz/session/${sessionId}/submit`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `${API_GATEWAY}/quiz/session/${sessionId}/submit?authenticated=${!!user}`,
+        { method: "POST" }
+      );
       if (!res.ok) throw new Error(`Submission failed (${res.status})`);
       const data = await res.json();
+
+      // Cache the recommendation so the ResultPage can use it immediately.
+      // For unauthenticated users the result is NOT in Supabase, so polling
+      // would timeout — sessionStorage is the fallback.
+      if (data.recommendation) {
+        sessionStorage.setItem(
+          `quiz_result_${data.submission_id}`,
+          JSON.stringify(data.recommendation)
+        );
+      }
+
       setHasSubmitted(true);
       setEditingQuestionId(null);
       setInputValue("");
