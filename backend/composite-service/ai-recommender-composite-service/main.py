@@ -192,11 +192,11 @@ async def get_submission(submission_id: str):
                 if ai_data.get("confidence_score"):
                     confidence = ai_data["confidence_score"]
                 else:
+                    # Fallback — matches the atomic service formula
                     solo_deviation = abs(solo_score - 5) / 5.0
                     structured_deviation = abs(structured_score - 5) / 5.0
-                    confidence = round(
-                        0.60 + ((solo_deviation + structured_deviation) / 2) * 0.35, 2
-                    )
+                    score_confidence = ((solo_deviation + structured_deviation) / 2) * 0.20
+                    confidence = round(0.40 + score_confidence, 2)
 
                 submission["recommendation"] = {
                     "personality_type": ai_data.get("personality_type", ""),

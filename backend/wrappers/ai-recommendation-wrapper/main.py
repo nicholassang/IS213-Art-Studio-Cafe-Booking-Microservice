@@ -165,11 +165,31 @@ def _map_scores(solo_social: int, structured_freeform: int) -> str:
         return "Dreamer"
 
 
-# FIX: single source of truth for confidence calculation — no more duplicate formula
-def _compute_confidence(solo_social_score: int, structured_freeform_score: int) -> float:
+# FIX: confidence based on answer detail + score distinctiveness
+def _compute_confidence(
+    solo_social_score: int,
+    structured_freeform_score: int,
+    answers: list[QuizAnswer] | None = None,
+) -> float:
+    """
+    Confidence = how much we trust this result.
+    - One-word/gibberish answers → below threshold, no recommendations.
+    - Brief but meaningful answers → pass, moderate confidence.
+    - Thoughtful answers + distinct scores → high confidence.
+    """
+    # Score distinctiveness (max 0.20) — distinct preferences add confidence
     solo_deviation = abs(solo_social_score - 5) / 5.0
     structured_deviation = abs(structured_freeform_score - 5) / 5.0
-    return round(0.60 + ((solo_deviation + structured_deviation) / 2) * 0.35, 2)
+    score_confidence = ((solo_deviation + structured_deviation) / 2) * 0.20
+
+    # Answer quality (max 0.40) — ~100 chars avg → full credit
+    answer_quality = 0.0
+    if answers:
+        avg_len = sum(len(a.answer_text.strip()) for a in answers) / len(answers)
+        answer_quality = min(avg_len / 100.0, 1.0) * 0.40
+
+    # Base floor 0.40
+    return round(0.40 + score_confidence + answer_quality, 2)
 
 
 def _format_answers(answers: list[QuizAnswer]) -> str:
@@ -379,7 +399,68 @@ async def recommend(request: RecommendRequest):
         )
 
         # FIX: compute confidence once and pass it through
-        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score)
+        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
+
+        # When confidence is below 50 %, answers were too brief to categorise or recommend.
+        if confidence < 0.50:
+            low_conf_result = {
+                "submission_id": request.submission_id,
+                "personality_type": "Unknown",
+                "solo_social_score": scores.solo_social_score,
+                "structured_freeform_score": scores.structured_freeform_score,
+                "scoring_reasoning": scores.reasoning,
+                "profile_title": "We'd love to know you better",
+                "profile_body": (
+                    "Your answers were a bit too brief for us to build a meaningful personality profile. "
+                    "We didn't want to guess — your creative preferences deserve more than a wild stab in the dark. "
+                    "Try retaking the quiz with a few more details about what you enjoy, and we'll have a much clearer picture next time."
+                ),
+                "recommendations": [],
+                "activity_explanations": [],
+                "food_recommendations": [],
+                "food_recommendation_details": [],
+                "drink_recommendation": "",
+                "drink_recommendation_details": {},
+                "closing": "Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
+                "confidence_score": confidence,
+            }
+
+            # FIX: must store in Supabase so the GET /quiz/submissions/{id} polling endpoint can find it
+            await store_result(
+                request.submission_id,
+                request.user_id,
+                request.answers,
+                scores,
+                low_conf_result["personality_type"],
+                [],
+                [],
+                [],
+                "",
+                {},
+                ProfileResult(
+                    profile_title=low_conf_result["profile_title"],
+                    profile_body=low_conf_result["profile_body"],
+                    activity_explanations=[],
+                    food_recommendations=[],
+                    drink_recommendation={"drink": "", "explanation": ""},
+                    closing=low_conf_result["closing"],
+                ),
+                confidence,
+            )
+
+            return low_conf_result
+
+        profile = await generate_profile(request.answers, scores, personality_type)
+        recommendations = _extract_recommendations(profile)
+        food_recommendations = _extract_food_recommendations(profile)
+        drink_recommendation = profile.drink_recommendation.get("drink", "")
+
+        logger.info(
+            f"Profile generated: {profile.profile_title} | "
+            f"Activities: {recommendations} | "
+            f"Food: {food_recommendations} | "
+            f"Drink: {drink_recommendation}"
+        )
 
         await store_result(
             request.submission_id,

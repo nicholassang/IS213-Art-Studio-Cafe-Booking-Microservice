@@ -69,15 +69,18 @@ Score from 0 to 10.
 
 RULES:
 - Base your scores only on what the customer actually said — do not infer or assume
+- If an answer is very short (one word, a single letter, or generic like "yes", "no", "idk", "sure", "whatever", "F"), it provides almost no signal — score close to 5 for that answer's implied axis
+- Only move far from 5 when the customer has given substantive, descriptive answers that clearly indicate a preference
+- If most answers are short or vague, ALL scores should stay close to 5 (range 4–6) since there is insufficient information
 - Be consistent: the same answers should always produce the same scores
 - Do not reference any personality framework, type name, or label in your reasoning
-- Use the full 0–10 range — avoid defaulting to middle scores unless genuinely ambiguous
+- In your reasoning, note when answers are too brief to draw strong conclusions
 
 Respond ONLY with valid JSON in exactly this format, with no preamble or markdown:
 {
   "solo_social_score": <int 0-10>,
   "structured_freeform_score": <int 0-10>,
-  "reasoning": "<one short paragraph explaining your scores based on specific things the customer said>"
+  "reasoning": "<one short paragraph explaining your scores based on specific things the customer said, noting if answers were too brief to be conclusive>"
 }
 """.strip()
 

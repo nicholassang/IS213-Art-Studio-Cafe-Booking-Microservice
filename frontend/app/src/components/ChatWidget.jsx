@@ -74,13 +74,39 @@ const styles = `
     font-weight: 700;
   }
   .chat-popup-brand span { color: #c9a87c; }
-  .chat-popup-progress {
-    font-size: 0.65rem;
-    color: #aaa098;
-    background: rgba(255,255,255,0.08);
-    padding: 3px 10px;
-    border-radius: 100px;
+
+  /* ── Progress counter ── */
+  .chat-popup-progress-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 100px;
   }
+  .chat-popup-progress-text {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #c9a87c;
+    letter-spacing: 0.03em;
+  }
+  .chat-popup-progress-text span {
+    color: #7c6f5e;
+    font-weight: 400;
+  }
+  .chat-popup-progress-bar-track {
+    width: 100%;
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .chat-popup-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #c9a87c, #e8c99a);
+    border-radius: 2px;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
   .chat-popup-close {
     background: none;
     border: none;
@@ -150,6 +176,7 @@ const styles = `
     background: #1a1612;
     color: #faf8f5;
     border-top-right-radius: 4px;
+    padding-right: 34px;
   }
 
   .chat-bubble-category {
@@ -169,17 +196,19 @@ const styles = `
   /* ── Edit button ── */
   .chat-edit-btn {
     position: absolute;
-    top: 4px;
-    right: 6px;
-    background: none;
+    top: 6px;
+    right: 8px;
+    background: rgba(255,255,255,0.15);
     border: none;
     cursor: pointer;
     font-size: 0.7rem;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-    padding: 2px 3px;
+    opacity: 0.7;
+    transition: opacity 0.2s, background 0.2s;
+    padding: 3px 5px;
+    border-radius: 4px;
+    line-height: 1;
   }
-  .chat-edit-btn:hover { opacity: 1; }
+  .chat-edit-btn:hover { opacity: 1; background: rgba(255,255,255,0.25); }
 
   /* ── Typing indicator ── */
   .chat-typing {
@@ -346,6 +375,33 @@ export default function ChatWidget() {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState(null);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  // Listen for custom event to reopen the quiz (from ResultPage retake button)
+  useEffect(() => {
+    const handleRetakeQuiz = () => {
+      resetQuiz();
+      setIsOpen(true);
+    };
+    window.addEventListener("retake-quiz", handleRetakeQuiz);
+    return () => window.removeEventListener("retake-quiz", handleRetakeQuiz);
+  }, []);
+
+  const resetQuiz = () => {
+    setInitialized(false);
+    setSessionId(null);
+    setQuestions([]);
+    setCurrentQIndex(0);
+    setAnswers({});
+    setInputValue("");
+    setMessages([]);
+    setIsTyping(false);
+    setLoading(true);
+    setError(null);
+    setSubmitting(false);
+    setEditingQuestionId(null);
+    setHasSubmitted(false);
+  };
 
   // Start session only once, when popup is first opened
   useEffect(() => {
@@ -466,7 +522,8 @@ export default function ChatWidget() {
   const handleEdit = (questionId) => {
     setEditingQuestionId(questionId);
     setInputValue(answers[questionId] || "");
-    inputRef.current?.focus();
+    setIsTyping(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const handleFinalSubmit = async () => {
@@ -478,6 +535,9 @@ export default function ChatWidget() {
       });
       if (!res.ok) throw new Error(`Submission failed (${res.status})`);
       const data = await res.json();
+      setHasSubmitted(true);
+      setEditingQuestionId(null);
+      setInputValue("");
       setIsOpen(false);
       navigate(`/quiz/result/${data.submission_id}`);
     } catch (err) {
@@ -516,7 +576,17 @@ export default function ChatWidget() {
           {/* Header */}
           <div className="chat-popup-header">
             <span className="chat-popup-brand">Café de <span>Paris</span></span>
-            {progress && <span className="chat-popup-progress">{progress} answered</span>}
+            {progress && (
+              <div className="chat-popup-progress-wrap">
+                <div className="chat-popup-progress-text">{progress} <span>answered</span></div>
+                <div className="chat-popup-progress-bar-track">
+                  <div
+                    className="chat-popup-progress-bar-fill"
+                    style={{ width: `${(Object.keys(answers).length / questions.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <button className="chat-popup-close" onClick={() => setIsOpen(false)}>✕</button>
           </div>
 
@@ -586,7 +656,7 @@ export default function ChatWidget() {
                 </div>
               )}
 
-              {allAnswered && !submitting && (
+              {allAnswered && !submitting && !hasSubmitted && !editingQuestionId && (
                 <button className="chat-submit-btn" onClick={handleFinalSubmit}>
                   Submit & Get My Personality Profile →
                 </button>
@@ -598,8 +668,8 @@ export default function ChatWidget() {
             </div>
           )}
 
-          {/* Input */}
-          {!loading && !allAnswered && !submitting && (
+          {/* Input — show when: quiz not all answered, or editing an existing answer */}
+          {!loading && !submitting && (!allAnswered || editingQuestionId) && (
             <div className="chat-popup-input-area">
               <div className="chat-popup-input-wrap">
                 <textarea
@@ -610,12 +680,11 @@ export default function ChatWidget() {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={!currentQ}
                 />
                 <button
                   className="chat-send-btn"
                   onClick={editingQuestionId ? handleEditSubmit : handleSend}
-                  disabled={!inputValue.trim() || !currentQ}
+                  disabled={!inputValue.trim()}
                 >↑</button>
               </div>
             </div>

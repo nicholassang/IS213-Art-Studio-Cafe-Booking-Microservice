@@ -199,6 +199,33 @@ const styles = `
     color: #c9a87c;
     font-weight: 600;
   }
+  .result-confidence-pct.low {
+    color: #d45a4a;
+  }
+  .result-confidence-fill.low {
+    background: linear-gradient(90deg, #d45a4a, #e88a7a);
+  }
+
+  /* ── Low-confidence notice ── */
+  .result-low-confidence-notice {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0ebe3;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .result-low-confidence-icon {
+    font-size: 1rem;
+    color: #d45a4a;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .result-low-confidence-text {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: #6b5d52;
+  }
 
   /* ── Scores breakdown ── */
   .result-scores {
@@ -445,13 +472,14 @@ export default function ResultPage() {
         }
 
         clearInterval(intervalId);
-        setResult(data.recommendation);
+        const rec = data.recommendation;
+        setResult(rec);
         setLoading(false);
 
         // Animate bars after render
-        const confidence = data.recommendation.confidence_score || 0.6;
-        const solo = data.recommendation.scores?.solo_social || 5;
-        const structured = data.recommendation.scores?.structured_freeform || 5;
+        const confidence = rec.confidence_score || 0.6;
+        const solo = rec.scores?.solo_social || 5;
+        const structured = rec.scores?.structured_freeform || 5;
         setTimeout(() => {
           setConfWidth(Math.round(confidence * 100));
           setSoloWidth((solo / 10) * 100);
@@ -472,8 +500,11 @@ export default function ResultPage() {
 
   const handleRetake = () => {
     localStorage.removeItem("quiz_user_id");
+    window.dispatchEvent(new CustomEvent("retake-quiz"));
     navigate("/");
   };
+
+  const isLowConfidence = result && (result.confidence_score || 0) < 0.5;
 
   return (
     <>
@@ -521,13 +552,18 @@ export default function ResultPage() {
               <p className="result-profile-body">{result.profile_body}</p>
 
               {/* Confidence meter */}
-              {result.confidence_score && (
+              {result.confidence_score !== undefined && result.confidence_score !== null && (
                 <div className="result-confidence">
                   <span className="result-confidence-label">Match confidence</span>
                   <div className="result-confidence-track">
-                    <div className="result-confidence-fill" style={{ width: `${confWidth}%` }} />
+                    <div
+                      className={`result-confidence-fill${isLowConfidence ? " low" : ""}`}
+                      style={{ width: `${confWidth}%` }}
+                    />
                   </div>
-                  <span className="result-confidence-pct">{confWidth}%</span>
+                  <span className={`result-confidence-pct${isLowConfidence ? " low" : ""}`}>
+                    {confWidth}%
+                  </span>
                 </div>
               )}
 
@@ -558,10 +594,21 @@ export default function ResultPage() {
               {result.scores?.reasoning && (
                 <p className="result-score-reasoning">"{result.scores.reasoning}"</p>
               )}
+
+              {/* Low-confidence notice */}
+              {isLowConfidence && (
+                <div className="result-low-confidence-notice">
+                  <span className="result-low-confidence-icon">✦</span>
+                  <p className="result-low-confidence-text">
+                    Your answers were too brief for us to place you into a creative profile or confidently recommend activities, food, or drinks.
+                    Try retaking the quiz with a bit more detail — even a sentence or two per answer helps a lot.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* ── Activity Recommendations ── */}
-            {result.activity_explanations && result.activity_explanations.length > 0 && (
+            {!isLowConfidence && result.activity_explanations && result.activity_explanations.length > 0 && (
               <div className="result-section">
                 <h2 className="result-section-title">Your Recommended Activities</h2>
                 {result.activity_explanations
@@ -579,11 +626,10 @@ export default function ResultPage() {
             )}
 
             {/* ── Food & Drink Recommendations ── */}
-            {(result.food_recommendation_details?.length > 0 || result.drink_recommendation_details) && (
+            {!isLowConfidence && (result.food_recommendation_details?.length > 0 || result.drink_recommendation_details) && (
               <div className="result-section">
                 <h2 className="result-section-title">Your Food & Drink Picks</h2>
                 <div className="result-food-drink-grid">
-                  {/* Food column */}
                   {result.food_recommendation_details && result.food_recommendation_details.length > 0 && (
                     <div className="result-food-drink-card">
                       <div className="result-food-drink-card-title">✦ Food Recommendations</div>
@@ -599,7 +645,6 @@ export default function ResultPage() {
                     </div>
                   )}
 
-                  {/* Drink column */}
                   {result.drink_recommendation_details && (
                     <div className="result-food-drink-card">
                       <div className="result-food-drink-card-title">✦ Drink Recommendation</div>
