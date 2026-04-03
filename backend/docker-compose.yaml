@@ -6,6 +6,12 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping", "-q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   kong:
     image: kong:3.7
@@ -65,14 +71,23 @@ services:
       - NOTIFICATION_URL=http://notification-service:8000
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
-      - rabbitmq
-      - user-service
-      - ai-recommendation-wrapper
-      - payment-wrapper
-      - menu-service
-      - foodorder-service
-      - activity-service
-      - notification-service
+      rabbitmq:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      ai-recommendation-wrapper:
+        condition: service_started
+      payment-wrapper:
+        condition: service_started
+      menu-service:
+        condition: service_started
+      foodorder-service:
+        condition: service_started
+      activity-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      
 
   ai-recommender-composite-service:
     build: ./composite-service/ai-recommender-composite-service
@@ -91,7 +106,8 @@ services:
     env_file:
       - ./wrappers/ai-recommendation-wrapper/.env
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
   payment-wrapper:
     build: ./wrappers/payment-wrapper
@@ -126,7 +142,8 @@ services:
       - RESEND_FORCE_TEST_RECIPIENT=${RESEND_FORCE_TEST_RECIPIENT:-false}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     ports:
      - "8010:8000"
 
@@ -149,6 +166,10 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     ports:
      - "8012:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
 
   menu-service:
     build:

@@ -1,5 +1,6 @@
 # ai-recommendation-wrapper main.py
 
+import asyncio
 import json
 import aio_pika
 import logging
@@ -74,7 +75,6 @@ class QuizSubmittedEvent(BaseModel):
     submitted_at: Optional[str] = None
 
 
-# ── NEW: captures the per-activity ranking returned by Call 1 ────────────
 class ActivityRankItem(BaseModel):
     rank: int
     activity: str
@@ -85,7 +85,6 @@ class ScoringResult(BaseModel):
     solo_social_score: int = Field(..., ge=0, le=10)
     structured_freeform_score: int = Field(..., ge=0, le=10)
     reasoning: str
-    # AI-derived ranking of all 5 activities — primary source for recommendations
     activity_ranking: list[ActivityRankItem] = Field(default_factory=list)
 
 
@@ -105,60 +104,74 @@ gemini_client = genai.Client(api_key=settings.gemini_api_key)
 _rabbitmq_connection = None
 _rabbitmq_healthy = False
 
+# In-memory processing status tracker
+# Values: "processing" | "complete" | "failed"
+_processing_status: dict[str, str] = {}
+
 
 # ---------------------------------------------------------------------------
-# Lifespan
+# Lifespan — with retry loop so RabbitMQ timing gaps are handled gracefully
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _rabbitmq_healthy
 
-    try:
-        logger.info(f"Connecting to RabbitMQ at {settings.rabbitmq_url}")
-        _rabbitmq_connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-        logger.info("Connected to RabbitMQ")
+    max_retries = 10
+    retry_delay = 5  # seconds
 
-        declare_channel = await _rabbitmq_connection.channel()
-        consume_channel = await _rabbitmq_connection.channel()
-        await consume_channel.set_qos(prefetch_count=settings.prefetch_count)
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to RabbitMQ (attempt {attempt}/{max_retries})...")
+            _rabbitmq_connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            logger.info("Connected to RabbitMQ")
 
-        quiz_exchange = await declare_channel.declare_exchange(
-            settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
-        )
-        logger.info(f"Declared exchange: {settings.quiz_exchange}")
+            declare_channel = await _rabbitmq_connection.channel()
+            consume_channel = await _rabbitmq_connection.channel()
+            await consume_channel.set_qos(prefetch_count=settings.prefetch_count)
 
-        dlq = await declare_channel.declare_queue(
-            f"{settings.quiz_queue}.dead_letter", durable=True
-        )
-        queue = await declare_channel.declare_queue(
-            settings.quiz_queue,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": dlq.name,
-            },
-        )
-        await queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
-        logger.info(f"Declared and bound queue: {settings.quiz_queue}")
+            quiz_exchange = await declare_channel.declare_exchange(
+                settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
+            )
+            logger.info(f"Declared exchange: {settings.quiz_exchange}")
 
-        consume_queue = await consume_channel.declare_queue(
-            settings.quiz_queue,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": dlq.name,
-            },
-        )
-        logger.info(f"Setting up consumer on queue: {settings.quiz_queue}")
-        await consume_queue.consume(on_quiz_submitted)
-        logger.info("Consumer setup complete")
+            dlq = await declare_channel.declare_queue(
+                f"{settings.quiz_queue}.dead_letter", durable=True
+            )
+            queue = await declare_channel.declare_queue(
+                settings.quiz_queue,
+                durable=True,
+                arguments={
+                    "x-dead-letter-exchange": "",
+                    "x-dead-letter-routing-key": dlq.name,
+                },
+            )
+            await queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
+            logger.info(f"Declared and bound queue: {settings.quiz_queue}")
 
-        _rabbitmq_healthy = True
-        logger.info("RabbitMQ setup complete - healthy")
+            consume_queue = await consume_channel.declare_queue(
+                settings.quiz_queue,
+                durable=True,
+                arguments={
+                    "x-dead-letter-exchange": "",
+                    "x-dead-letter-routing-key": dlq.name,
+                },
+            )
+            logger.info(f"Setting up consumer on queue: {settings.quiz_queue}")
+            await consume_queue.consume(on_quiz_submitted)
+            logger.info("Consumer setup complete")
 
-    except Exception as e:
-        logger.exception(f"RabbitMQ setup failed: {e}")
-        _rabbitmq_healthy = False
+            _rabbitmq_healthy = True
+            logger.info("RabbitMQ setup complete - healthy")
+            break  # success — exit retry loop
+
+        except Exception as e:
+            logger.warning(f"RabbitMQ setup attempt {attempt} failed: {e}")
+            _rabbitmq_healthy = False
+            if attempt < max_retries:
+                logger.info(f"Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("All RabbitMQ connection attempts failed. Consumer not started.")
 
     yield
 
@@ -199,14 +212,9 @@ def _map_scores(solo_social: int, structured_freeform: int) -> str:
 def _extract_recommendations_from_ranking(
     activity_ranking: list[ActivityRankItem],
 ) -> list[str]:
-    """
-    Pull the top 3 activity names from the AI's ranked list (Call 1).
-    Returns an empty list if the ranking is missing or malformed.
-    """
     if not activity_ranking:
         return []
 
-    # Validate that all activity names are from the known set
     valid_activities = set(ACTIVITIES)
     valid_items = [
         item for item in activity_ranking
@@ -227,11 +235,6 @@ def _ensure_recommendation_list(
     raw: Any,
     personality_type: Optional[str] = None,
 ) -> list[str]:
-    """
-    Guarantee exactly 3 deduplicated valid recommendations.
-    Accepts a pre-built list from AI ranking or falls back to the
-    hardcoded personality-type defaults.
-    """
     fallback = ACTIVITY_RECOMMENDATIONS.get(
         personality_type or "",
         ACTIVITY_RECOMMENDATIONS["Dreamer"],
@@ -256,13 +259,11 @@ def _ensure_recommendation_list(
             else:
                 recommendations = [text]
 
-    # Deduplicate while preserving order
     deduped: list[str] = []
     for rec in recommendations:
         if rec not in deduped:
             deduped.append(rec)
 
-    # Pad with fallback entries if fewer than 3 valid items
     for rec in fallback:
         if len(deduped) >= 3:
             break
@@ -276,7 +277,6 @@ def _normalize_activity_explanations(
     raw: Any,
     recommendations: list[str],
 ) -> list[dict]:
-    """Align activity_explanations from the profile AI call with the ranked recommendations."""
     raw_items = raw if isinstance(raw, list) else []
     by_rank: dict[int, dict] = {}
     by_activity: dict[str, dict] = {}
@@ -372,12 +372,6 @@ def _estimate_confidence_from_record(record: dict) -> float:
 # ---------------------------------------------------------------------------
 
 def _build_scoring_prompt(answers: list[QuizAnswer]) -> str:
-    """
-    Build the user-turn for Call 1.
-    Groups answers by category so the AI can apply per-category signal weights
-    as instructed in SCORING_SYSTEM_PROMPT.
-    """
-    # Group by category for clarity
     by_category: dict[str, list[QuizAnswer]] = {}
     for answer in answers:
         by_category.setdefault(answer.category, []).append(answer)
@@ -411,11 +405,6 @@ def _build_profile_prompt(
     personality_type: str,
     recommendations: list[str],
 ) -> str:
-    """
-    Build the user-turn for Call 2.
-    Passes answers grouped by category and includes the AI's own ranking
-    reasons from Call 1 so the profile can reference them.
-    """
     by_category: dict[str, list[QuizAnswer]] = {}
     for answer in answers:
         by_category.setdefault(answer.category, []).append(answer)
@@ -449,7 +438,6 @@ def _build_profile_prompt(
         f"  3. {recommendations[2]}",
     ]
 
-    # Include ranking reasons from Call 1 to help ground the profile explanations
     if scores.activity_ranking:
         lines.append("")
         lines.append("Activity ranking reasons from scoring step:")
@@ -504,13 +492,30 @@ async def _call_ai(system_prompt: str, user_prompt: str, temperature: float) -> 
 
 
 def _parse_json_response(text: str) -> dict:
-    """Extract JSON from AI response, tolerating markdown code fences."""
+    """Extract JSON from AI response, tolerating markdown code fences and control characters."""
     text = text.strip()
+
+    # Strip markdown code fences
     if text.startswith("```"):
         text = text.split("```", 2)[-2] if text.count("```") >= 2 else text.split("```", 1)[1]
         if text.startswith("json"):
             text = text[4:]
-    return json.loads(text.strip())
+
+    text = text.strip()
+
+    # Remove invalid control characters (except legitimate whitespace: \n \r \t)
+    import re
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+
+    # Replace literal unescaped newlines inside JSON string values
+    # (Groq sometimes returns profile_body with real newlines instead of \n)
+    def fix_newlines(match):
+        return match.group(0).replace('\n', '\\n').replace('\r', '\\r')
+
+    # Fix unescaped newlines inside quoted strings
+    text = re.sub(r'"(?:[^"\\]|\\.)*"', fix_newlines, text, flags=re.DOTALL)
+
+    return json.loads(text)
 
 
 # ---------------------------------------------------------------------------
@@ -518,16 +523,10 @@ def _parse_json_response(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def score_answers(answers: list[QuizAnswer]) -> ScoringResult:
-    """
-    Call 1 — deterministic scoring (temperature: 0).
-    Returns axis scores + a full AI-derived activity ranking.
-    The activity_ranking is the primary source for recommendations.
-    """
     user_prompt   = _build_scoring_prompt(answers)
     response_text = await _call_ai(SCORING_SYSTEM_PROMPT, user_prompt, temperature=0)
     data          = _parse_json_response(response_text)
 
-    # Parse activity_ranking into typed objects (tolerates missing/malformed items)
     raw_ranking = data.get("activity_ranking", [])
     parsed_ranking: list[ActivityRankItem] = []
     for item in raw_ranking:
@@ -550,10 +549,6 @@ async def generate_profile(
     personality_type: str,
     recommendations: list[str],
 ) -> ProfileResult:
-    """
-    Call 2 — creative profile generation (temperature: 0.7).
-    Passes ranking reasons from Call 1 to ground the activity explanations.
-    """
     system_prompt = build_profile_system_prompt(
         personality_type, scores.model_dump(), recommendations
     )
@@ -588,8 +583,7 @@ async def store_result(
         "solo_social_score":       scores.solo_social_score,
         "structured_freeform_score": scores.structured_freeform_score,
         "scoring_reasoning":       scores.reasoning,
-        # Store the full AI ranking for debugging / future use
-        "activity_ranking":        [r.model_dump() for r in scores.activity_ranking],
+        # "activity_ranking":        [r.model_dump() for r in scores.activity_ranking],
         "personality_type":        personality_type,
         "recommendations":         recommendations,
         "profile_title":           profile.profile_title,
@@ -610,8 +604,12 @@ async def store_result(
 # ---------------------------------------------------------------------------
 
 async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
+    submission_id = None
     try:
         event = QuizSubmittedEvent(**json.loads(message.body.decode()))
+        submission_id = event.submission_id
+        _processing_status[submission_id] = "processing"
+
         logger.info(
             f"Processing quiz submission {event.submission_id} for user {event.user_id}"
         )
@@ -628,9 +626,6 @@ async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
             f"→ {personality_type}"
         )
 
-        # ── Recommendation source priority ────────────────────────────────
-        # 1. AI-derived ranking from Call 1  (most accurate — answer-specific)
-        # 2. Hardcoded fallback for personality type  (generic backstop only)
         ai_ranked = _extract_recommendations_from_ranking(scores.activity_ranking)
         if ai_ranked:
             logger.info(f"Using AI-derived activity ranking: {ai_ranked}")
@@ -665,10 +660,13 @@ async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
         )
 
         await message.ack()
+        _processing_status[submission_id] = "complete"
         logger.info(f"Successfully processed submission {event.submission_id}")
 
     except Exception:
         logger.exception("Failed to process quiz submission")
+        if submission_id:
+            _processing_status[submission_id] = "failed"
         await message.nack(requeue=False)
 
 
@@ -697,7 +695,6 @@ async def get_quiz_results(submission_id: str):
 
         payload = dict(result.data[0])
 
-        # Re-normalise on read so stale/partial Supabase rows still return cleanly
         personality_type  = payload.get("personality_type")
         recommendations   = _ensure_recommendation_list(
             payload.get("recommendations"),
@@ -716,6 +713,13 @@ async def get_quiz_results(submission_id: str):
     except Exception as e:
         logger.error(f"Failed to fetch results for {submission_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quiz/status/{submission_id}")
+async def get_processing_status(submission_id: str):
+    """Check in-memory processing status for a submission."""
+    status = _processing_status.get(submission_id, "unknown")
+    return {"submission_id": submission_id, "status": status}
 
 
 @app.get("/health")

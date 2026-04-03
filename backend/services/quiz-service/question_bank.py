@@ -1,3 +1,5 @@
+# question_bank.py for quiz-service
+
 """
 Question Bank for Quiz Microservice
 4 sections × 10 open-ended questions each.

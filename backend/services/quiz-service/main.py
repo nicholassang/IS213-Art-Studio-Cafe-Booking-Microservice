@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import uuid
@@ -40,15 +41,27 @@ TOTAL_QUESTIONS = QUESTIONS_PER_SECTION * len(CATEGORIES)  # 8
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _quiz_exchange
-    try:
-        _rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL)
-        channel = await _rabbitmq_connection.channel()
-        _quiz_exchange = await channel.declare_exchange(
-            QUIZ_EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True
-        )
-        print("Connected to RabbitMQ.")
-    except Exception as exc:
-        print(f"RabbitMQ unavailable – async events disabled. ({exc})")
+
+    max_retries = 10
+    retry_delay = 5  # seconds
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"Connecting to RabbitMQ (attempt {attempt}/{max_retries})...")
+            _rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL)
+            channel = await _rabbitmq_connection.channel()
+            _quiz_exchange = await channel.declare_exchange(
+                QUIZ_EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True
+            )
+            print("Connected to RabbitMQ.")
+            break  # success
+        except Exception as exc:
+            print(f"RabbitMQ unavailable (attempt {attempt}): {exc}")
+            if attempt < max_retries:
+                print(f"Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+            else:
+                print("All RabbitMQ connection attempts failed. Async events disabled.")
 
     yield
 
