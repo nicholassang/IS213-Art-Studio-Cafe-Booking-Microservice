@@ -1,188 +1,197 @@
-"""
-Question Bank for Quiz Microservice
-4 sections × 10 open-ended questions each.
-All questions are free-text — no multiple choice.
-"""
+# question_bank.py
+#
+# Single source of truth for all quiz questions (open-ended).
+# Imported by quiz_service.py — do not instantiate FastAPI or any service
+# logic here.
+#
+# 4 categories × 10 questions = 40 questions total.
+# Quiz service randomly selects 2 per category (8 total) per session.
+#
+# Structure per question:
+#   question_id : str  — unique slug (category prefix + number)
+#   text        : str  — conversational question shown to the user
+#   category    : str  — one of the CATEGORIES keys
 
 QUESTION_BANK: list[dict] = [
-    # ──────────────────────────────────────────────
-    # SECTION 1 — Food & Drink (10 questions)
-    # ──────────────────────────────────────────────
+
+    # ------------------------------------------------------------------
+    # CATEGORY 1 — Food & Drink Preferences (fd1–fd10)
+    # ------------------------------------------------------------------
     {
         "question_id": "fd1",
-        "text": "When you walk into a café, what's the first thing you look for on the menu?",
+        "text": "What's your ideal order at a café — walk me through what you'd get?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd2",
-        "text": "Describe your ideal café drink on a lazy afternoon.",
+        "text": "Are you the type to try something new on the menu, or do you stick to what you know?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd3",
-        "text": "How do you feel about trying new or unusual food combinations at a café?",
+        "text": "How important is it to you that a café caters to dietary preferences like vegan or gluten-free options?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd4",
-        "text": "What does your perfect café meal look like — light snack, full meal, or something in between?",
+        "text": "Do you usually visit a café just for a drink, or do you like to make a meal of it?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd5",
-        "text": "Do you have any dietary preferences or restrictions that shape your café choices?",
+        "text": "Would you say you're someone who eats to fuel up, or someone who treats café food as part of the experience?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd6",
-        "text": "When dining at a café, do you prefer familiar comfort food or adventurous new flavours?",
+        "text": "Do you enjoy sharing food and drinks with others at a café, or do you prefer ordering just for yourself?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd7",
-        "text": "How much do you typically spend on food and drinks during a café visit?",
+        "text": "What kind of flavours or cuisines do you find yourself gravitating towards at a café?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd8",
-        "text": "What role does presentation and aesthetics of food play in your café experience?",
+        "text": "Does it matter to you whether a café uses locally sourced or sustainable ingredients?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd9",
-        "text": "Describe a memorable food or drink experience you've had at a café.",
+        "text": "Describe your ideal café meal occasion — are you there for a quick bite or a long, leisurely sit-down?",
         "category": "food_and_drink",
     },
     {
         "question_id": "fd10",
-        "text": "If a café offered a seasonal special, how likely are you to try it and why?",
+        "text": "How do you feel about trying completely unfamiliar ingredients or dishes you've never heard of?",
         "category": "food_and_drink",
     },
 
-    # ──────────────────────────────────────────────
-    # SECTION 2 — Activity Preferences (10 questions)
-    # ──────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # CATEGORY 2 — Activity Preferences (ap1–ap10)
+    # ------------------------------------------------------------------
     {
         "question_id": "ap1",
-        "text": "What kind of hands-on activities do you enjoy most — structured workshops or free-form creative sessions?",
+        "text": "If a café offered a creative activity, what would you hope it looks like?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap2",
-        "text": "When doing a creative activity, do you prefer working alone, with a partner, or in a group?",
+        "text": "Do you prefer being guided step-by-step through an activity, or would you rather just dive in and figure it out yourself?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap3",
-        "text": "How long are you comfortable spending on a single creative activity?",
+        "text": "How long are you comfortable spending on a hands-on activity before it starts to feel like too much?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap4",
-        "text": "Describe your ideal level of guidance during a workshop — step-by-step instruction or explore on your own?",
+        "text": "Would you rather do a creative activity on your own, or does it feel better when others are involved?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap5",
-        "text": "What draws you more — the process of making something or the finished result?",
+        "text": "What would make a café activity feel worthwhile to you — learning something new, making something, relaxing, or just having fun with others?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap6",
-        "text": "Have you ever tried an art or craft activity before? What was it like?",
+        "text": "Would it matter to you if an activity resulted in something you could take home, or is the experience itself enough?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap7",
-        "text": "Do you prefer activities that are relaxing and meditative or challenging and skill-building?",
+        "text": "How do you feel about a facilitator or instructor guiding you during a creative session?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap8",
-        "text": "If you could take home something you made yourself, what would it be?",
+        "text": "After finishing a creative activity, what feeling would make you consider it a success?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap9",
-        "text": "How important is it that the activity produces something you can display or gift?",
+        "text": "Are you comfortable doing a creative activity in front of other café guests, or do you prefer a more private setting?",
         "category": "activity_preferences",
     },
     {
         "question_id": "ap10",
-        "text": "What would make a creative workshop feel worth returning to again and again?",
+        "text": "Would you prefer an activity that challenges you or one that feels easy and pressure-free?",
         "category": "activity_preferences",
     },
 
-    # ──────────────────────────────────────────────
-    # SECTION 3 — Ambience & Vibe (10 questions)
-    # ──────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # CATEGORY 3 — Ambience & Vibe (av1–av10)
+    # ------------------------------------------------------------------
     {
         "question_id": "av1",
-        "text": "Describe the atmosphere of your dream café — what does it feel like when you walk in?",
+        "text": "Describe your perfect café atmosphere — what does it look, sound, and feel like?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av2",
-        "text": "What kind of interior design or décor catches your attention and makes you want to stay?",
+        "text": "Does the way a café looks affect whether you'd go back?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av3",
-        "text": "How does background music affect your café experience — what kind and how loud?",
+        "text": "What kind of music or background sound do you like in a café?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av4",
-        "text": "Do you prefer a bustling, energetic space or a quiet, intimate retreat?",
+        "text": "Do you prefer indoor or outdoor seating, and does it change depending on the occasion?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av5",
-        "text": "How important are natural light, plants, and outdoor elements in a café's ambience?",
+        "text": "How does lighting affect your mood or comfort in a café?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av6",
-        "text": "What visual or sensory details make a café feel special to you?",
+        "text": "Does it matter to you whether a café is Instagram-worthy or photogenic?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av7",
-        "text": "Would you rather sit by a window, in a cosy corner, or out on a terrace?",
+        "text": "How do you feel about background noise and chatter in a café — does it help or bother you?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av8",
-        "text": "How does the scent or aroma of a café influence your overall experience?",
+        "text": "Which sensory detail matters most to you in a café — the smell, the sound, the look, or the feel?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av9",
-        "text": "Describe a café space you've visited that left a lasting impression on you.",
+        "text": "How do you feel about cafés built around a strong concept or theme, like a cat café or a library café?",
         "category": "ambience_and_vibe",
     },
     {
         "question_id": "av10",
-        "text": "What kind of seating arrangement do you prefer — communal tables, private booths, or scattered chairs?",
+        "text": "If you walked into a café and immediately felt uncomfortable, what would most likely be the reason?",
         "category": "ambience_and_vibe",
     },
 
-    # ──────────────────────────────────────────────
-    # SECTION 4 — Visit Style & Occasion (10 questions)
-    # ──────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # CATEGORY 4 — Visit Style & Occasion (vs1–vs10)
+    # ------------------------------------------------------------------
     {
         "question_id": "vs1",
-        "text": "Do you usually visit cafés solo, with a friend, or as part of a group? What do you enjoy about it?",
+        "text": "Who do you usually visit cafés with, and what are you typically there for?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs2",
-        "text": "What's your most common reason for booking a café experience — celebration, relaxation, or exploration?",
+        "text": "Are you someone who plans café visits ahead of time, or do you just show up spontaneously?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs3",
-        "text": "How often do you seek out new café experiences versus returning to familiar spots?",
+        "text": "How often do you visit cafés, and what usually prompts you to go?",
         "category": "visit_style_and_occasion",
     },
     {
@@ -192,32 +201,32 @@ QUESTION_BANK: list[dict] = [
     },
     {
         "question_id": "vs5",
-        "text": "If you were planning a special outing at a café, what occasion would it be?",
+        "text": "What kind of occasion would most likely bring you to a café that offers a bookable activity?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs6",
-        "text": "Do you prefer planned, structured outings or spontaneous, go-with-the-flow visits?",
+        "text": "How long do you usually spend at a café — do you settle in or keep it short?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs7",
-        "text": "How important is it that a café experience feels unique or one-of-a-kind?",
+        "text": "How do you usually discover new cafés — social media, word of mouth, reviews, or just stumbling across them?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs8",
-        "text": "Would you book a café activity for a team event, a date night, or a personal treat? What appeals to you?",
+        "text": "Are you loyal to cafés you love, or do you prefer exploring somewhere new each time?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs9",
-        "text": "Describe your ideal weekend café outing from start to finish.",
+        "text": "What would make you leave a café earlier than you planned?",
         "category": "visit_style_and_occasion",
     },
     {
         "question_id": "vs10",
-        "text": "What would make you recommend a café experience to a friend without hesitation?",
+        "text": "If you were bringing someone to a café for the first time, what would you want them to experience?",
         "category": "visit_style_and_occasion",
     },
 ]

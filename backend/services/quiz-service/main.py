@@ -9,27 +9,27 @@ from typing import Optional
 import aio_pika
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from supabase import create_client, Client
 
 from question_bank import QUESTION_BANK
 
 load_dotenv()
 
-# Supabase client
-SUPABASE_URL: str = os.environ["SUPABASE_URL"]
-SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# ── Clients ───────────────────────────────────────────────────────────────
+supabase: Client = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_KEY"],
+)
 
-# RabbitMQ
 RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
 QUIZ_EXCHANGE: str = os.getenv("QUIZ_EXCHANGE", "quiz_events")
 
 _quiz_exchange: Optional[aio_pika.abc.AbstractExchange] = None
 _rabbitmq_connection = None
 
-# ── In-memory session store ──────────────────────────────────────────────
-# session_id → { "user_id", "questions": [8 selected questions], "answers": {question_id: text} }
+# ── In-memory session store ───────────────────────────────────────────────
+# session_id → { "user_id", "questions": [...], "answers": {question_id: text} }
 _sessions: dict[str, dict] = {}
 
 CATEGORIES = ["food_and_drink", "activity_preferences", "ambience_and_vibe", "visit_style_and_occasion"]
@@ -37,6 +37,7 @@ QUESTIONS_PER_SECTION = 2
 TOTAL_QUESTIONS = QUESTIONS_PER_SECTION * len(CATEGORIES)  # 8
 
 
+# ── Lifespan ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _rabbitmq_connection, _quiz_exchange
@@ -64,14 +65,25 @@ app = FastAPI(
 )
 
 
-# ── Pydantic schemas ─────────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────
 class QuestionOut(BaseModel):
     question_id: str
     text: str
     category: str
 
-
 class AnswerIn(BaseModel):
+    question_id: str
+    answer_text: str
+
+    @field_validator("answer_text")
+    @classmethod
+    def answer_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Answer cannot be empty.")
+        return v.strip()
+
+
+class AnswerOut(BaseModel):
     question_id: str
     answer_text: str
 
@@ -84,23 +96,7 @@ class SessionOut(BaseModel):
     session_id: str
     user_id: str
     questions: list[QuestionOut]
-
-
-class AnswerUpdate(BaseModel):
-    question_id: str
-    answer_text: str
-
-
-class QuizSubmission(BaseModel):
-    user_id: str
-    answers: list[AnswerIn]
-
-
-class QuizSubmissionResponse(BaseModel):
-    submission_id: str
-    user_id: str
-    submitted_at: str
-    answer_count: int
+    answers: dict[str, str]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -115,6 +111,13 @@ def _select_questions() -> list[dict]:
         pool = [q for q in QUESTION_BANK if q["category"] == category]
         selected.extend(random.sample(pool, QUESTIONS_PER_SECTION))
     return selected
+
+
+def _get_session_or_404(session_id: str) -> dict:
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return session
 
 
 async def _publish(routing_key: str, payload: dict) -> None:
@@ -133,6 +136,16 @@ async def _publish(routing_key: str, payload: dict) -> None:
         print(f"Failed to publish '{routing_key}': {exc}")
 
 
+# ── Question bank endpoint ───────────────────────────────────────────────
+@app.get("/quiz/questions", tags=["Quiz"])
+def get_all_questions(category: str = None):
+    """Return all questions from the question bank, optionally filtered by category."""
+    questions = QUESTION_BANK
+    if category:
+        questions = [q for q in questions if q["category"] == category]
+    return questions
+
+
 # ── Session endpoints ─────────────────────────────────────────────────────
 @app.post("/quiz/session", response_model=SessionOut, tags=["Quiz"])
 def start_session(payload: SessionStart):
@@ -147,41 +160,39 @@ def start_session(payload: SessionStart):
         "created_at": _now_iso(),
     }
 
-    return {
-        "session_id": session_id,
-        "user_id": payload.user_id,
-        "questions": [QuestionOut(**q) for q in questions],
-    }
+    return SessionOut(
+        session_id=session_id,
+        user_id=payload.user_id,
+        questions=[QuestionOut(**q) for q in questions],
+        answers={},
+    )
 
 
 @app.get("/quiz/session/{session_id}", response_model=SessionOut, tags=["Quiz"])
 def get_session(session_id: str):
-    """Retrieve a quiz session with its current answers."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return {
-        "session_id": session_id,
-        "user_id": session["user_id"],
-        "questions": [QuestionOut(**q) for q in session["questions"]],
-    }
+    """Retrieve a session with its questions and current answers (for state restore)."""
+    session = _get_session_or_404(session_id)
+    return SessionOut(
+        session_id=session_id,
+        user_id=session["user_id"],
+        questions=[QuestionOut(**q) for q in session["questions"]],
+        answers=session["answers"],
+    )
 
 
 # ── Answer endpoints ──────────────────────────────────────────────────────
 @app.post("/quiz/session/{session_id}/answer", tags=["Quiz"])
 def submit_answer(session_id: str, payload: AnswerIn):
-    """Submit or update an answer for a question in the session."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    """Submit or overwrite an answer for a question in the session."""
+    session = _get_session_or_404(session_id)
 
     valid_qids = {q["question_id"] for q in session["questions"]}
     if payload.question_id not in valid_qids:
         raise HTTPException(status_code=400, detail=f"Question '{payload.question_id}' not in this session.")
 
     session["answers"][payload.question_id] = payload.answer_text
-
     answered_count = len(session["answers"])
+
     return {
         "session_id": session_id,
         "question_id": payload.question_id,
@@ -192,17 +203,19 @@ def submit_answer(session_id: str, payload: AnswerIn):
 
 
 @app.put("/quiz/session/{session_id}/answer/{question_id}", tags=["Quiz"])
-def edit_answer(session_id: str, question_id: str, payload: AnswerUpdate):
-    """Edit a previously submitted answer."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
+    """Edit a previously submitted answer (triggered by the edit button in UI)."""
+    session = _get_session_or_404(session_id)
 
     valid_qids = {q["question_id"] for q in session["questions"]}
     if question_id not in valid_qids:
         raise HTTPException(status_code=400, detail=f"Question '{question_id}' not in this session.")
 
+    if question_id not in session["answers"]:
+        raise HTTPException(status_code=400, detail=f"No existing answer for '{question_id}' to edit.")
+
     session["answers"][question_id] = payload.answer_text
+
     return {
         "session_id": session_id,
         "question_id": question_id,
@@ -214,11 +227,9 @@ def edit_answer(session_id: str, question_id: str, payload: AnswerUpdate):
 @app.get("/quiz/session/{session_id}/progress", tags=["Quiz"])
 def get_progress(session_id: str):
     """Check how many questions have been answered."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-
+    session = _get_session_or_404(session_id)
     answered_count = len(session["answers"])
+
     return {
         "session_id": session_id,
         "answered_count": answered_count,
@@ -228,10 +239,9 @@ def get_progress(session_id: str):
     }
 
 
-# ── Final submission endpoint ─────────────────────────────────────────────
+# ── Submit endpoint ───────────────────────────────────────────────────────
 @app.post(
     "/quiz/session/{session_id}/submit",
-    response_model=QuizSubmissionResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["Quiz"],
 )
@@ -242,9 +252,7 @@ async def submit_session(session_id: str):
     - Persists to Supabase (quiz_submissions table).
     - Publishes to RabbitMQ for AI microservice to consume.
     """
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    session = _get_session_or_404(session_id)
 
     if len(session["answers"]) < TOTAL_QUESTIONS:
         raise HTTPException(
@@ -255,16 +263,15 @@ async def submit_session(session_id: str):
     submission_id = str(uuid.uuid4())
     submitted_at = _now_iso()
 
-    # Build answers list ordered by session question order
-    answers_list = []
-    for q in session["questions"]:
-        qid = q["question_id"]
-        answers_list.append({
-            "question_id": qid,
+    answers_list = [
+        {
+            "question_id": q["question_id"],
             "question_text": q["text"],
             "category": q["category"],
-            "answer_text": session["answers"].get(qid, ""),
-        })
+            "answer_text": session["answers"][q["question_id"]],
+        }
+        for q in session["questions"]
+    ]
 
     record = {
         "submission_id": submission_id,
@@ -275,18 +282,12 @@ async def submit_session(session_id: str):
 
     result = supabase.table("quiz_submissions").insert(record).execute()
     if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to save submission.")
+        raise HTTPException(status_code=500, detail="Failed to save submission to Supabase.")
 
-    # Publish event for AI microservice
-    await _publish(
-        "quiz.submitted",
-        {
-            "submission_id": submission_id,
-            "user_id": session["user_id"],
-            "answers": answers_list,
-            "submitted_at": submitted_at,
-        },
-    )
+    await _publish("quiz.submitted", record)
+
+    # Clean up session from memory after successful submission
+    _sessions.pop(session_id, None)
 
     return {
         "submission_id": submission_id,
@@ -296,48 +297,18 @@ async def submit_session(session_id: str):
     }
 
 
-# ── Legacy compatibility endpoints (for existing frontend) ────────────────
-@app.get("/quiz/questions", response_model=list[QuestionOut], tags=["Quiz"])
-def get_questions(category: Optional[str] = None):
-    """Return all questions (or filtered by category) for legacy frontend compatibility."""
-    if category:
-        return [QuestionOut(**q) for q in QUESTION_BANK if q["category"] == category]
-    return [QuestionOut(**q) for q in QUESTION_BANK]
-
-
-@app.get("/quiz/submissions", tags=["Quiz"])
-def list_submissions(user_id: Optional[str] = None):
-    query = supabase.table("quiz_submissions").select("*")
-    if user_id:
-        query = query.eq("user_id", user_id)
-    result = query.order("submitted_at", desc=True).execute()
-    return result.data or []
-
-
+# ── Submission retrieval endpoints ────────────────────────────────────────
 @app.get("/quiz/submissions/{submission_id}", tags=["Quiz"])
-def get_submission(submission_id: str):
+async def get_submission(submission_id: str):
+    """Retrieve a previously submitted quiz session by its submission_id."""
     result = (
         supabase.table("quiz_submissions")
         .select("*")
         .eq("submission_id", submission_id)
-        .limit(1)
         .execute()
     )
-    if not result.data:
-        raise HTTPException(status_code=404, detail="No submission found.")
-    return result.data[0]
 
-
-@app.get("/quiz/submissions/user/{user_id}", tags=["Quiz"])
-def get_user_submission(user_id: str):
-    result = (
-        supabase.table("quiz_submissions")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("submitted_at", desc=True)
-        .limit(1)
-        .execute()
-    )
     if not result.data:
-        raise HTTPException(status_code=404, detail="No submission found for this user.")
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
     return result.data[0]
