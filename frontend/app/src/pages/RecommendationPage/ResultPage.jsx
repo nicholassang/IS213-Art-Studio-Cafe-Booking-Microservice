@@ -6,7 +6,7 @@ const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 20; // 60 seconds max
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -88,12 +88,12 @@ const styles = `
 
   /* ── Content ── */
   .result-content {
-    max-width: 680px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 40px 24px 80px;
     display: flex;
     flex-direction: column;
-    gap: 32px;
+    gap: 36px;
     animation: fade-in 0.5s ease;
   }
   @keyframes fade-in {
@@ -101,7 +101,43 @@ const styles = `
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* ── Type badge ── */
+  /* ── Section card ── */
+  .result-section {
+    background: #fff;
+    border: 1px solid #ede8e1;
+    border-radius: 16px;
+    padding: 28px 32px;
+    animation: fade-in 0.5s ease;
+  }
+
+  /* ── AI chip ── */
+  .result-ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #f0ebe3;
+    border: 1px solid #e2dbd2;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 0.72rem;
+    color: #7c6f5e;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    margin-bottom: 18px;
+  }
+  .result-ai-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #c9a87c;
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* ── Personality profile header ── */
   .result-type-badge {
     display: inline-block;
     background: #1a1612;
@@ -112,22 +148,105 @@ const styles = `
     font-weight: 500;
     padding: 6px 14px;
     border-radius: 100px;
+    margin-bottom: 12px;
   }
-
-  /* ── Profile title ── */
   .result-profile-title {
     font-family: 'Playfair Display', serif;
     font-size: 2rem;
     font-weight: 700;
     line-height: 1.25;
     color: #1a1612;
+    margin-bottom: 16px;
   }
-
-  /* ── Profile body ── */
   .result-profile-body {
     font-size: 0.95rem;
     line-height: 1.75;
     color: #4a3f35;
+  }
+
+  /* ── Confidence meter ── */
+  .result-confidence {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0ebe3;
+  }
+  .result-confidence-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #aaa098;
+    font-weight: 500;
+  }
+  .result-confidence-track {
+    flex: 1;
+    max-width: 180px;
+    height: 5px;
+    background: #e2dbd2;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .result-confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #c9a87c, #e8c99a);
+    border-radius: 3px;
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .result-confidence-pct {
+    font-size: 0.82rem;
+    color: #c9a87c;
+    font-weight: 600;
+  }
+
+  /* ── Scores breakdown ── */
+  .result-scores {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0ebe3;
+  }
+  .result-score-item {}
+  .result-score-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .result-score-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #4a3f35;
+  }
+  .result-score-value {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #c9a87c;
+  }
+  .result-score-bar-track {
+    width: 100%;
+    height: 6px;
+    background: #e2dbd2;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .result-score-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #c9a87c, #b38d5e);
+    border-radius: 3px;
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1) 0.3s;
+  }
+  .result-score-reasoning {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f0ebe3;
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: #6b5d52;
+    font-style: italic;
   }
 
   /* ── Divider ── */
@@ -136,44 +255,43 @@ const styles = `
     background: #e2dbd2;
   }
 
-  /* ── Activities section ── */
-  .result-activities-heading {
+  /* ── Section headings ── */
+  .result-section-title {
     font-family: 'Playfair Display', serif;
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     font-weight: 600;
     color: #1a1612;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
 
+  /* ── Activity cards ── */
   .result-activity-card {
-    background: #fff;
-    border: 1px solid #ede8e1;
-    border-radius: 12px;
-    padding: 18px 20px;
     display: flex;
     gap: 16px;
-    align-items: flex-start;
+    padding: 18px 20px;
+    background: #faf8f5;
+    border: 1px solid #ede8e1;
+    border-radius: 12px;
+    margin-bottom: 12px;
   }
-  .result-activity-card + .result-activity-card { margin-top: 12px; }
-
+  .result-activity-card:last-child { margin-bottom: 0; }
   .result-activity-rank {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     background: linear-gradient(135deg, #c9a87c, #b38d5e);
     color: #fff;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
   }
-
   .result-activity-info { flex: 1; }
   .result-activity-name {
     font-family: 'Playfair Display', serif;
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: #1a1612;
     margin-bottom: 6px;
@@ -184,11 +302,64 @@ const styles = `
     color: #6b5d52;
   }
 
+  /* ── Food & Drink grid ── */
+  .result-food-drink-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .result-food-drink-card {
+    background: #faf8f5;
+    border: 1px solid #ede8e1;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .result-food-drink-card-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #aaa098;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .result-food-drink-item {
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e2dbd2;
+  }
+  .result-food-drink-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  .result-food-drink-rank {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #c9a87c;
+    background: #f0ebe3;
+    padding: 2px 8px;
+    border-radius: 100px;
+    margin-bottom: 6px;
+  }
+  .result-food-drink-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1a1612;
+    margin-bottom: 4px;
+  }
+  .result-food-drink-explanation {
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: #6b5d52;
+  }
+
   /* ── Closing ── */
   .result-closing {
     background: #1a1612;
     border-radius: 12px;
-    padding: 24px;
+    padding: 24px 28px;
     color: #faf8f5;
     font-family: 'Playfair Display', serif;
     font-size: 1rem;
@@ -210,11 +381,21 @@ const styles = `
     cursor: pointer;
     letter-spacing: 0.02em;
     transition: background 0.2s, color 0.2s;
-    align-self: flex-start;
+    align-self: center;
   }
   .result-retake-btn:hover {
     background: #c9a87c;
     color: #fff;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 760px) {
+    .result-content { padding: 24px 16px 60px; gap: 24px; }
+    .result-section { padding: 20px; }
+    .result-profile-title { font-size: 1.6rem; }
+    .result-scores { grid-template-columns: 1fr; }
+    .result-food-drink-grid { grid-template-columns: 1fr; }
+    .result-activity-card { flex-direction: column; gap: 12px; }
   }
 `;
 
@@ -225,6 +406,9 @@ export default function ResultPage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [confWidth, setConfWidth] = useState(0);
+  const [soloWidth, setSoloWidth] = useState(0);
+  const [structuredWidth, setStructuredWidth] = useState(0);
 
   useEffect(() => {
     let polls = 0;
@@ -249,7 +433,7 @@ export default function ResultPage() {
 
         const data = await res.json();
 
-        // Check if AI recommendation is ready (composite service returns submission without recommendation if AI isn't done)
+        // Check if AI recommendation is ready
         if (!data.recommendation) {
           polls++;
           if (polls >= MAX_POLLS) {
@@ -263,6 +447,16 @@ export default function ResultPage() {
         clearInterval(intervalId);
         setResult(data.recommendation);
         setLoading(false);
+
+        // Animate bars after render
+        const confidence = data.recommendation.confidence_score || 0.6;
+        const solo = data.recommendation.scores?.solo_social || 5;
+        const structured = data.recommendation.scores?.structured_freeform || 5;
+        setTimeout(() => {
+          setConfWidth(Math.round(confidence * 100));
+          setSoloWidth((solo / 10) * 100);
+          setStructuredWidth((structured / 10) * 100);
+        }, 200);
       } catch (err) {
         clearInterval(intervalId);
         setError(err.message || "Something went wrong loading your results.");
@@ -270,7 +464,6 @@ export default function ResultPage() {
       }
     };
 
-    // Poll until results are ready
     fetchResult();
     intervalId = setInterval(fetchResult, POLL_INTERVAL_MS);
 
@@ -290,13 +483,13 @@ export default function ResultPage() {
           <span className="result-header-brand">Café de <span>Paris</span></span>
         </div>
 
-        {/* Loading state — poll while AI processes */}
+        {/* Loading state */}
         {loading && (
           <div className="result-loading">
             <div className="result-loader-ring" />
             <p className="result-loading-title">Crafting your profile…</p>
             <p className="result-loading-sub">
-              Our AI is analysing your answers and finding the perfect activities for you.
+              Our AI is analysing your answers and finding the perfect activities, food, and drinks for you.
               This usually takes about 15–30 seconds.
             </p>
           </div>
@@ -315,33 +508,122 @@ export default function ResultPage() {
         {/* Result */}
         {!loading && result && (
           <div className="result-content">
-            <div>
+
+            {/* ── Personality Profile ── */}
+            <div className="result-section">
+              <div className="result-ai-chip">
+                <span className="result-ai-dot" />
+                Your AI-Generated Personality Profile
+              </div>
+
               <div className="result-type-badge">{result.personality_type}</div>
-            </div>
+              <h1 className="result-profile-title">{result.profile_title}</h1>
+              <p className="result-profile-body">{result.profile_body}</p>
 
-            <h1 className="result-profile-title">{result.profile_title}</h1>
+              {/* Confidence meter */}
+              {result.confidence_score && (
+                <div className="result-confidence">
+                  <span className="result-confidence-label">Match confidence</span>
+                  <div className="result-confidence-track">
+                    <div className="result-confidence-fill" style={{ width: `${confWidth}%` }} />
+                  </div>
+                  <span className="result-confidence-pct">{confWidth}%</span>
+                </div>
+              )}
 
-            <p className="result-profile-body">{result.profile_body}</p>
-
-            <div className="result-divider" />
-
-            <div>
-              <h2 className="result-activities-heading">Your recommended activities</h2>
-              {result.activity_explanations
-                ?.sort((a, b) => a.rank - b.rank)
-                .map((item) => (
-                  <div key={item.rank} className="result-activity-card">
-                    <div className="result-activity-rank">{item.rank}</div>
-                    <div className="result-activity-info">
-                      <div className="result-activity-name">{item.activity}</div>
-                      <div className="result-activity-explanation">{item.explanation}</div>
+              {/* Scoring breakdown */}
+              {result.scores && (
+                <div className="result-scores">
+                  <div className="result-score-item">
+                    <div className="result-score-header">
+                      <span className="result-score-label">Solo ← → Social</span>
+                      <span className="result-score-value">{result.scores.solo_social}/10</span>
+                    </div>
+                    <div className="result-score-bar-track">
+                      <div className="result-score-bar-fill" style={{ width: `${soloWidth}%` }} />
                     </div>
                   </div>
-                ))}
+                  <div className="result-score-item">
+                    <div className="result-score-header">
+                      <span className="result-score-label">Structured ← → Freeform</span>
+                      <span className="result-score-value">{result.scores.structured_freeform}/10</span>
+                    </div>
+                    <div className="result-score-bar-track">
+                      <div className="result-score-bar-fill" style={{ width: `${structuredWidth}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {result.scores?.reasoning && (
+                <p className="result-score-reasoning">"{result.scores.reasoning}"</p>
+              )}
             </div>
 
-            <div className="result-closing">{result.closing}</div>
+            {/* ── Activity Recommendations ── */}
+            {result.activity_explanations && result.activity_explanations.length > 0 && (
+              <div className="result-section">
+                <h2 className="result-section-title">Your Recommended Activities</h2>
+                {result.activity_explanations
+                  .sort((a, b) => a.rank - b.rank)
+                  .map((item) => (
+                    <div key={item.rank} className="result-activity-card">
+                      <div className="result-activity-rank">#{item.rank}</div>
+                      <div className="result-activity-info">
+                        <div className="result-activity-name">{item.activity}</div>
+                        <div className="result-activity-explanation">{item.explanation}</div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
 
+            {/* ── Food & Drink Recommendations ── */}
+            {(result.food_recommendation_details?.length > 0 || result.drink_recommendation_details) && (
+              <div className="result-section">
+                <h2 className="result-section-title">Your Food & Drink Picks</h2>
+                <div className="result-food-drink-grid">
+                  {/* Food column */}
+                  {result.food_recommendation_details && result.food_recommendation_details.length > 0 && (
+                    <div className="result-food-drink-card">
+                      <div className="result-food-drink-card-title">✦ Food Recommendations</div>
+                      {result.food_recommendation_details
+                        .sort((a, b) => a.rank - b.rank)
+                        .map((item) => (
+                          <div key={item.rank} className="result-food-drink-item">
+                            <span className="result-food-drink-rank">#{item.rank} Pick</span>
+                            <div className="result-food-drink-name">{item.food}</div>
+                            <div className="result-food-drink-explanation">{item.explanation}</div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Drink column */}
+                  {result.drink_recommendation_details && (
+                    <div className="result-food-drink-card">
+                      <div className="result-food-drink-card-title">✦ Drink Recommendation</div>
+                      <div className="result-food-drink-item">
+                        <span className="result-food-drink-rank">Perfect Pairing</span>
+                        <div className="result-food-drink-name">
+                          {result.drink_recommendation_details.drink || result.drink_recommendation}
+                        </div>
+                        <div className="result-food-drink-explanation">
+                          {result.drink_recommendation_details.explanation}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Closing ── */}
+            {result.closing && (
+              <div className="result-closing">{result.closing}</div>
+            )}
+
+            {/* ── Retake ── */}
             <button className="result-retake-btn" onClick={handleRetake}>
               Retake the Quiz
             </button>
