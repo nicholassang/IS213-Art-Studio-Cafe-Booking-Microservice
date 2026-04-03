@@ -70,6 +70,15 @@ async def logout(request: Request):
 
 
 #Activities
+@app.get("/getAllActivities")
+async def get_all_activities(request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"{ACTIVITY_URL}/getAllActivities", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
 @app.get("/activities")
 async def get_activities(request: Request):
     try:
@@ -279,6 +288,71 @@ async def delete_food_order(order_id: int, request: Request):
         return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
 
 # ai-recommendor-comp-service
+
+# ── Quiz session endpoints (chatbot UI) ──────────────────────────────────
+@app.post("/quiz/session")
+async def start_quiz_session(request: Request):
+    data = await request.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session", json=data, cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.get("/quiz/session/{session_id}")
+async def get_quiz_session(session_id: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session/{session_id}", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.post("/quiz/session/{session_id}/answer")
+async def submit_quiz_answer(session_id: str, request: Request):
+    data = await request.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session/{session_id}/answer", json=data, cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.put("/quiz/session/{session_id}/answer/{question_id}")
+async def edit_quiz_answer(session_id: str, question_id: str, request: Request):
+    data = await request.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.put(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session/{session_id}/answer/{question_id}", json=data, cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.get("/quiz/session/{session_id}/progress")
+async def get_quiz_progress(session_id: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session/{session_id}/progress", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
+@app.post("/quiz/session/{session_id}/submit")
+async def submit_quiz_session(session_id: str, request: Request):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(f"{AI_RECOMMENDER_COMPOSITE_URL}/quiz/session/{session_id}/submit", cookies=request.cookies)
+        return JSONResponse(status_code=res.status_code, content=res.json())
+    except httpx.RequestError as exc:
+        return JSONResponse(status_code=502, content={"success": False, "message": str(exc)})
+
+
 @app.get("/quiz/questions")
 async def get_quiz_questions(request: Request, category: str = None):
     params = {"category": category} if category else {}

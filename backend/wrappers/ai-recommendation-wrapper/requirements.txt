@@ -14,4 +14,4 @@ google-genai
 aio_pika
 
 # Database
-# supabase
+supabase

@@ -29,6 +29,52 @@ recommendations_store: List[Dict[str, Any]] = []
 # Quiz routes
 # ---------------------------------------------------------------------------
 
+@app.post("/quiz/session")
+async def start_session(request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session", json=body)
+    return res.json()
+
+
+@app.get("/quiz/session/{session_id}")
+async def get_session(session_id: str):
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}")
+    return res.json()
+
+
+@app.post("/quiz/session/{session_id}/answer")
+async def submit_answer(session_id: str, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/answer", json=body)
+    return res.json()
+
+
+@app.put("/quiz/session/{session_id}/answer/{question_id}")
+async def edit_answer(session_id: str, question_id: str, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.put(f"{QUIZ_URL}/quiz/session/{session_id}/answer/{question_id}", json=body)
+    return res.json()
+
+
+@app.get("/quiz/session/{session_id}/progress")
+async def get_progress(session_id: str):
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}/progress")
+    return res.json()
+
+
+@app.post("/quiz/session/{session_id}/submit")
+async def submit_session(session_id: str, request: Request):
+    body = await request.json() if await request.body() else {}
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/submit", json=body)
+    return res.json()
+
+
 @app.get("/quiz/questions")
 async def get_questions(category: str = None):
     params = {"category": category} if category else {}
@@ -70,8 +116,34 @@ async def get_user_submission(user_id: str):
 @app.get("/quiz/submissions/{submission_id}")
 async def get_submission(submission_id: str):
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/submissions/{submission_id}")
-    return res.json()
+        # Fetch raw submission from quiz service
+        sub_res = await client.get(f"{QUIZ_URL}/quiz/submissions/{submission_id}")
+        if sub_res.status_code != 200:
+            raise HTTPException(status_code=sub_res.status_code, detail=sub_res.text)
+        submission = sub_res.json()
+
+    # Fetch AI recommendation from wrapper
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            ai_res = await client.get(f"{AI_RECOMMENDATION_URL}/quiz/results/{submission_id}")
+            if ai_res.status_code == 200:
+                ai_data = ai_res.json()
+                # Build the recommendation object the frontend expects
+                rec_activity = ai_data.get("recommendations", [])
+                submission["recommendation"] = {
+                    "activity": rec_activity[0] if rec_activity else "",
+                    "reason": ai_data.get("profile_title", ""),
+                    "confidence": 0.85,
+                    "personality_type": ai_data.get("personality_type", ""),
+                    "explanations": ai_data.get("activity_explanations", []),
+                    "profile_body": ai_data.get("profile_body", ""),
+                    "closing": ai_data.get("closing", ""),
+                }
+    except Exception:
+        # AI results may still be processing — return submission without recommendation
+        logger.warning(f"AI recommendation not yet available for {submission_id}")
+
+    return submission
 
 
 @app.put("/quiz/submissions/{submission_id}")
