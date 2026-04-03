@@ -415,7 +415,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
 
     try {
       const result = await processPayment({
-        Amount: finalAmount,
+        Amount: amount,
         Currency: currency.toLowerCase(),
         PaymentMethod: "pm_card_visa",
         VoucherCode: voucher?.code || "",

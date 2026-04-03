@@ -98,6 +98,8 @@ services:
     container_name: payment-wrapper
     ports:
       - "8007:8000"
+    env_file:
+      - ./wrappers/payment-wrapper/.env
 
   # ai-recommendation-wrapper:
   #   build: ./wrappers/ai-recommendation-wrapper
