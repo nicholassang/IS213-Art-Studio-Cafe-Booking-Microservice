@@ -1,3 +1,4 @@
+// recommendation.jsx
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -347,6 +348,30 @@ const styles = `
     50% { opacity: 0.4; transform: scale(0.7); }
   }
 
+  /* ── Profile body section ── */
+  .rec-profile-section {
+    background: #fff;
+    border: 1px solid #ede8e1;
+    border-radius: 20px;
+    padding: 32px 36px;
+    margin-bottom: 28px;
+    box-shadow: 0 4px 16px rgba(26,22,18,0.05);
+  }
+  .rec-profile-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #c9a87c;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .rec-profile-body {
+    font-size: 0.95rem;
+    color: #4a423a;
+    line-height: 1.8;
+    font-weight: 300;
+  }
+
   /* ── Secondary suggestions ── */
   .rec-also-label {
     font-size: 0.72rem;
@@ -488,117 +513,165 @@ export default function RecommendationPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
 
-  const [submission, setSubmission] = useState(null);
   const [recommended, setRecommended] = useState(null);
   const [otherActivities, setOtherActivities] = useState([]);
+  const [profileBody, setProfileBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [confWidth, setConfWidth] = useState(0);
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+
   const normalizeConfidence = (value, fallback = 0.5) => {
     const parsed = Number(value);
-    const normalized = Number.isFinite(parsed) ? (parsed > 1 ? parsed / 100 : parsed) : fallback;
+    const normalized = Number.isFinite(parsed)
+      ? parsed > 1 ? parsed / 100 : parsed
+      : fallback;
     return Math.max(0, Math.min(1, normalized));
-  };
-
-  const normalizeRankedActivities = (recommendation) => {
-    if (Array.isArray(recommendation?.activities) && recommendation.activities.length > 0) {
-      return recommendation.activities
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-        .slice(0, 3);
-    }
-    if (recommendation?.activity) {
-      return [String(recommendation.activity).trim()].filter(Boolean);
-    }
-    return [];
   };
 
   const findBestActivityMatch = (allActivities, recName) => {
     const target = String(recName || "").trim().toLowerCase();
     if (!target) return null;
-
-    const exact = allActivities.find((a) => (a.name || "").trim().toLowerCase() === target);
+    const exact = allActivities.find(
+      (a) => (a.name || "").trim().toLowerCase() === target
+    );
     if (exact) return exact;
-
-    return allActivities.find((a) => {
-      const name = (a.name || "").trim().toLowerCase();
-      return name.includes(target) || target.includes(name);
-    }) || null;
+    return (
+      allActivities.find((a) => {
+        const name = (a.name || "").trim().toLowerCase();
+        return name.includes(target) || target.includes(name);
+      }) || null
+    );
   };
 
   const buildExplanationMap = (explanations) => {
     const map = new Map();
     if (!Array.isArray(explanations)) return map;
-
     explanations.forEach((item) => {
       if (!item || typeof item !== "object") return;
       const activity = String(item.activity || "").trim().toLowerCase();
       const explanation = String(item.explanation || "").trim();
-      if (activity && explanation) {
-        map.set(activity, explanation);
-      }
+      if (activity && explanation) map.set(activity, explanation);
     });
-
     return map;
   };
 
+  // ── Data loading with polling ──────────────────────────────────────────
+
   useEffect(() => {
+    let attempts = 0;
+    const maxAttempts = 10;
+    const retryDelayMs = 3000;
+    let timeoutId = null;
+
     const loadData = async () => {
       try {
-        const [subRes, activitiesRes] = await Promise.all([
-          fetch(`${API_GATEWAY}/quiz/submissions/${submissionId}`),
-          fetch(`${API_GATEWAY}/getAllActivities`),
-        ]);
-
-        if (!subRes.ok) throw new Error("Submission not found");
-        const sub = await subRes.json();
-        setSubmission(sub);
-
+        // Fetch activities list (only needed once — no need to poll this)
+        const activitiesRes = await fetch(`${API_GATEWAY}/getAllActivities`);
+        if (!activitiesRes.ok) throw new Error("Could not load activities");
         const activitiesData = await activitiesRes.json();
         const allActivities = activitiesData.activities || [];
-        if (!allActivities.length) {
-          throw new Error("No activities available");
-        }
+        if (!allActivities.length) throw new Error("No activities available");
 
-        const recommendation = sub.recommendation || {};
-        const rankedNames = normalizeRankedActivities(recommendation);
-        if (!rankedNames.length) {
-          throw new Error("Your recommendation is still being generated. Please refresh in a few seconds.");
-        }
-        const explanationsMap = buildExplanationMap(recommendation.explanations);
+        // Poll the AI results endpoint until ready
+        const pollAiResults = async () => {
+          const aiRes = await fetch(
+            `${API_GATEWAY}/quiz/results/${submissionId}`
+          );
 
-        const topName = rankedNames[0] || "";
-        const topMatch = findBestActivityMatch(allActivities, topName) || allActivities[0];
-        const confidence = normalizeConfidence(recommendation.confidence, 0.5);
-        const topReason = explanationsMap.get((topName || topMatch?.name || "").toLowerCase()) || recommendation.reason;
+          // Still processing — retry
+          if (aiRes.status === 404) {
+            if (attempts < maxAttempts) {
+              attempts++;
+              timeoutId = setTimeout(pollAiResults, retryDelayMs);
+              return;
+            } else {
+              throw new Error(
+                "Your recommendation is taking longer than expected. Please refresh the page in a moment."
+              );
+            }
+          }
 
-        setRecommended({
-          ...topMatch,
-          aiReason: topReason,
-          confidence,
-        });
+          if (!aiRes.ok) throw new Error("Could not load your recommendation");
 
-        const usedIds = new Set([topMatch?.id]);
-        const secondaryCards = rankedNames.slice(1, 3)
-          .map((name) => {
-            const match = findBestActivityMatch(allActivities, name);
-            if (!match || usedIds.has(match.id)) return null;
-            usedIds.add(match.id);
-            return {
-              ...match,
-              aiReason: explanationsMap.get(name.toLowerCase()) || "",
-            };
-          })
-          .filter(Boolean);
+          // ── AI results shape ──────────────────────────────────────────
+          // {
+          //   recommendations: ["Clay Sculpting", "Oil Painting", "Watercoloring"],
+          //   activity_explanations: [{rank, activity, explanation}, ...],
+          //   profile_title: "...",
+          //   profile_body: "...",
+          //   confidence_score: 0.72,
+          //   personality_type: "Craftsman",
+          //   closing: "..."
+          // }
+          const aiData = await aiRes.json();
 
-        const fallbackCards = allActivities
-          .filter((a) => !usedIds.has(a.id))
-          .slice(0, Math.max(0, 3 - secondaryCards.length));
-        setOtherActivities([...secondaryCards, ...fallbackCards]);
-        setLoading(false);
+          const rankedNames = Array.isArray(aiData.recommendations)
+            ? aiData.recommendations.filter(Boolean).slice(0, 3)
+            : [];
 
-        setTimeout(() => setConfWidth(confidence * 100), 200);
+          if (!rankedNames.length) {
+            // Unlikely but guard against empty recommendations
+            if (attempts < maxAttempts) {
+              attempts++;
+              timeoutId = setTimeout(pollAiResults, retryDelayMs);
+              return;
+            }
+            throw new Error(
+              "Your recommendation is still being generated. Please refresh in a few seconds."
+            );
+          }
+
+          const explanationsMap = buildExplanationMap(
+            aiData.activity_explanations
+          );
+          const confidence = normalizeConfidence(aiData.confidence_score, 0.5);
+
+          // Top recommendation
+          const topName = rankedNames[0];
+          const topMatch =
+            findBestActivityMatch(allActivities, topName) || allActivities[0];
+
+          setRecommended({
+            ...topMatch,
+            aiReason:
+              explanationsMap.get(topName.toLowerCase()) ||
+              aiData.closing ||
+              topMatch?.description ||
+              "",
+            confidence,
+            profileTitle: aiData.profile_title || "",
+            personalityType: aiData.personality_type || "",
+          });
+
+          setProfileBody(aiData.profile_body || "");
+
+          // Secondary recommendations
+          const usedIds = new Set([topMatch?.id]);
+          const secondaryCards = rankedNames
+            .slice(1, 3)
+            .map((name) => {
+              const match = findBestActivityMatch(allActivities, name);
+              if (!match || usedIds.has(match.id)) return null;
+              usedIds.add(match.id);
+              return {
+                ...match,
+                aiReason: explanationsMap.get(name.toLowerCase()) || "",
+              };
+            })
+            .filter(Boolean);
+
+          const fallbackCards = allActivities
+            .filter((a) => !usedIds.has(a.id))
+            .slice(0, Math.max(0, 3 - secondaryCards.length));
+
+          setOtherActivities([...secondaryCards, ...fallbackCards]);
+          setLoading(false);
+          setTimeout(() => setConfWidth(confidence * 100), 200);
+        };
+
+        await pollAiResults();
       } catch (e) {
         setError(e.message || "Something went wrong");
         setLoading(false);
@@ -606,7 +679,12 @@ export default function RecommendationPage() {
     };
 
     loadData();
+
+    // Cleanup pending retry on unmount
+    return () => { if (timeoutId) clearTimeout(timeoutId); };
   }, [submissionId]);
+
+  // ── Render states ──────────────────────────────────────────────────────
 
   if (loading) return (
     <>
@@ -614,7 +692,7 @@ export default function RecommendationPage() {
       <div className="rec-loading">
         <div className="rec-loader-ring" />
         <p className="rec-loading-title">Curating your experience…</p>
-        <p className="rec-loading-sub">Matching your preferences</p>
+        <p className="rec-loading-sub">Our AI is analysing your answers</p>
       </div>
     </>
   );
@@ -625,15 +703,33 @@ export default function RecommendationPage() {
       <div className="rec-error-wrap">
         <span className="rec-error-icon">✦</span>
         <h2 className="rec-error-title">We couldn't find your result</h2>
-        <p className="rec-error-text">{error || "The recommendation may still be processing."}</p>
-        <button className="rec-cta" style={{ maxWidth: 200 }} onClick={() => navigate("/quiz")}>
-          Retake Quiz
+        <p className="rec-error-text">
+          {error || "The recommendation may still be processing."}
+        </p>
+        <p className="rec-error-text" style={{ marginTop: 8 }}>
+          Your recommendation is still being generated. Please refresh in a few seconds.
+        </p>
+        <button
+          className="rec-cta"
+          style={{ maxWidth: 200, marginTop: 8 }}
+          onClick={() => window.location.reload()}
+        >
+          Refresh
+        </button>
+        <button
+          className="rec-retake-btn"
+          style={{ marginTop: 8 }}
+          onClick={() => navigate("/quiz/chat")}
+        >
+          Retake the quiz
         </button>
       </div>
     </>
   );
 
   const confidencePct = Math.round((recommended.confidence ?? 0.5) * 100);
+
+  // ── Main render ────────────────────────────────────────────────────────
 
   return (
     <>
@@ -642,22 +738,34 @@ export default function RecommendationPage() {
 
         {/* Hero */}
         <div className="rec-hero">
-          <button className="rec-hero-back" onClick={() => navigate("/activities")}>
+          <button
+            className="rec-hero-back"
+            onClick={() => navigate("/activities")}
+          >
             ← Browse All Activities
           </button>
 
           <p className="rec-hero-eyebrow">Your AI Recommendation</p>
           <h1 className="rec-hero-title">
-            We found your <em>perfect</em> match.
+            {recommended.profileTitle
+              ? <em>{recommended.profileTitle}</em>
+              : <>We found your <em>perfect</em> match.</>
+            }
           </h1>
-          <p className="rec-hero-sub">
-            Based on your preferences, our AI has curated the ideal experience for you at Café de Paris.
-          </p>
+          {recommended.personalityType && (
+            <p className="rec-hero-sub">
+              You're a <strong style={{ color: "#c9a87c" }}>{recommended.personalityType}</strong> —
+              our AI has curated the ideal creative experience for you at Café de Paris.
+            </p>
+          )}
 
           <div className="rec-confidence-wrap">
             <span className="rec-confidence-label">Match confidence</span>
             <div className="rec-confidence-bar-track">
-              <div className="rec-confidence-bar-fill" style={{ width: `${confWidth}%` }} />
+              <div
+                className="rec-confidence-bar-fill"
+                style={{ width: `${confWidth}%` }}
+              />
             </div>
             <span className="rec-confidence-pct">{confidencePct}%</span>
           </div>
@@ -671,7 +779,11 @@ export default function RecommendationPage() {
             <div className="rec-card-inner">
 
               <div className="rec-card-img-wrap">
-                <img src={recommended.image} alt={recommended.name} className="rec-card-img" />
+                <img
+                  src={recommended.image}
+                  alt={recommended.name}
+                  className="rec-card-img"
+                />
                 <div className="rec-card-img-overlay" />
                 <span className="rec-card-img-badge">✦ Top Pick</span>
               </div>
@@ -705,7 +817,9 @@ export default function RecommendationPage() {
                     </div>
                     <div className="rec-meta-item">
                       <span className="rec-meta-label">Rating</span>
-                      <span className="rec-meta-value">⭐ {recommended.rating} ({recommended.reviews})</span>
+                      <span className="rec-meta-value">
+                        ⭐ {recommended.rating} ({recommended.reviews})
+                      </span>
                     </div>
                   </div>
 
@@ -726,21 +840,35 @@ export default function RecommendationPage() {
             </div>
           </div>
 
+          {/* AI personality profile body */}
+          {profileBody && (
+            <div className="rec-profile-section">
+              <p className="rec-profile-label">Your Creative Profile</p>
+              <p className="rec-profile-body">{profileBody}</p>
+            </div>
+          )}
+
           {/* Other activities */}
           {otherActivities.length > 0 && (
             <>
               <p className="rec-also-label">You might also enjoy</p>
               <div className="rec-also-grid">
-                {otherActivities.map(act => (
+                {otherActivities.map((act) => (
                   <div
                     key={act.id}
                     className="rec-also-card"
                     onClick={() => navigate(`/activity/${act.id}`)}
                   >
-                    <img src={act.image} alt={act.name} className="rec-also-img" />
+                    <img
+                      src={act.image}
+                      alt={act.name}
+                      className="rec-also-img"
+                    />
                     <div className="rec-also-body">
                       <p className="rec-also-name">{act.name}</p>
-                      <p className="rec-also-meta">{act.category} · {act.duration}</p>
+                      <p className="rec-also-meta">
+                        {act.category} · {act.duration}
+                      </p>
                       <p className="rec-also-price">${act.price}</p>
                     </div>
                   </div>
@@ -750,7 +878,10 @@ export default function RecommendationPage() {
           )}
 
           <div className="rec-retake">
-            <button className="rec-retake-btn" onClick={() => navigate("/quiz")}>
+            <button
+              className="rec-retake-btn"
+              onClick={() => navigate("/quiz/chat")}
+            >
               Retake the quiz to explore other options
             </button>
           </div>
