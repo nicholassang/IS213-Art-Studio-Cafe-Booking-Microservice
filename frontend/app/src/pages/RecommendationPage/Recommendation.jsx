@@ -489,7 +489,7 @@ export default function RecommendationPage() {
   const navigate = useNavigate();
 
   const [submission, setSubmission] = useState(null);
-  const [recommended, setRecommended] = useState(null);
+  const [topActivities, setTopActivities] = useState([]);
   const [otherActivities, setOtherActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -510,14 +510,31 @@ export default function RecommendationPage() {
         const activitiesData = await activitiesRes.json();
         const allActivities = activitiesData.activities || [];
 
-        const recName = sub.recommendation?.activity || "";
-        const match = allActivities.find(a =>
-          a.name.toLowerCase().includes(recName.toLowerCase()) ||
-          recName.toLowerCase().includes(a.name.toLowerCase())
-        ) || allActivities[0];
+        // Get the top 3 recommended activities from the AI explanation
+        const recExplanations = sub.recommendation?.explanations || [];
+        const top3 = recExplanations.map(exp => {
+          const match = allActivities.find(a =>
+            a.name.toLowerCase().includes(exp.activity.toLowerCase()) ||
+            exp.activity.toLowerCase().includes(a.name.toLowerCase())
+          );
+          return match ? { ...match, aiReason: exp.explanation, rank: exp.rank } : null;
+        }).filter(Boolean);
 
-        setRecommended({ ...match, aiReason: sub.recommendation?.reason, confidence: sub.recommendation?.confidence ?? 0.85 });
-        setOtherActivities(allActivities.filter(a => a.id !== match?.id).slice(0, 3));
+        if (top3.length > 0) {
+          setTopActivities(top3);
+        } else {
+          // Fallback: use the single activity recommendation
+          const recName = sub.recommendation?.activity || "";
+          const match = allActivities.find(a =>
+            a.name.toLowerCase().includes(recName.toLowerCase()) ||
+            recName.toLowerCase().includes(a.name.toLowerCase())
+          );
+          if (match) {
+            setTopActivities([{ ...match, aiReason: sub.recommendation?.reason, rank: 1 }]);
+          }
+        }
+
+        setOtherActivities(allActivities.filter(a => !topActivities.find(t => t.id === a.id)).slice(0, 3));
         setLoading(false);
 
         setTimeout(() => setConfWidth((sub.recommendation?.confidence ?? 0.85) * 100), 200);
@@ -541,7 +558,7 @@ export default function RecommendationPage() {
     </>
   );
 
-  if (error || !recommended) return (
+  if (error || topActivities.length === 0) return (
     <>
       <style>{styles}</style>
       <div className="rec-error-wrap">
@@ -555,7 +572,13 @@ export default function RecommendationPage() {
     </>
   );
 
-  const confidencePct = Math.round((recommended.confidence || 0.85) * 100);
+  const confidencePct = Math.round((submission?.recommendation?.confidence || 0.85) * 100);
+  const personalityType = submission?.recommendation?.personality_type || "";
+  const profileTitle = submission?.recommendation?.profile_body?.split('\n')[0] || "";
+  const profileBody = submission?.recommendation?.profile_body || "";
+  const profileClosing = submission?.recommendation?.closing || "";
+
+  const primaryActivity = topActivities[0];
 
   return (
     <>
@@ -570,10 +593,10 @@ export default function RecommendationPage() {
 
           <p className="rec-hero-eyebrow">Your AI Recommendation</p>
           <h1 className="rec-hero-title">
-            We found your <em>perfect</em> match.
+            You are a <em>{personalityType}</em>.
           </h1>
           <p className="rec-hero-sub">
-            Based on your preferences, our AI has curated the ideal experience for you at Café de Paris.
+            Based on your quiz responses, we've identified your creative personality and curated the perfect experiences for you at Café de Paris.
           </p>
 
           <div className="rec-confidence-wrap">
@@ -588,14 +611,72 @@ export default function RecommendationPage() {
         {/* Body */}
         <div className="rec-body">
 
+          {/* Personality Profile Section */}
+          {profileBody && (
+            <div style={{
+              background: '#fff',
+              border: '1px solid #ede8e1',
+              borderRadius: 24,
+              padding: '40px 48px',
+              marginBottom: 28,
+              boxShadow: '0 8px 24px rgba(26,22,18,0.06)',
+              animation: 'rec-rise 0.5s cubic-bezier(0.4,0,0.2,1)',
+            }}>
+              <div className="rec-ai-chip">
+                <span className="rec-ai-dot" />
+                Your Personality Profile
+              </div>
+              <h2 style={{
+                fontFamily: "'Playfair Display', serif",
+                fontSize: '1.8rem',
+                color: '#1a1612',
+                fontWeight: 700,
+                marginBottom: 20,
+                lineHeight: 1.3,
+              }}>
+                {personalityType}
+              </h2>
+              <div style={{
+                width: 40,
+                height: 3,
+                background: '#c9a87c',
+                borderRadius: 2,
+                marginBottom: 20,
+              }} />
+              <p style={{
+                fontSize: '0.95rem',
+                color: '#6b6357',
+                lineHeight: 1.8,
+                fontWeight: 300,
+                marginBottom: 16,
+                whiteSpace: 'pre-line',
+              }}>
+                {profileBody}
+              </p>
+              {profileClosing && (
+                <p style={{
+                  fontSize: '0.93rem',
+                  color: '#c9a87c',
+                  fontStyle: 'italic',
+                  fontWeight: 400,
+                  marginTop: 24,
+                  paddingTop: 20,
+                  borderTop: '1px solid #f0ebe3',
+                }}>
+                  {profileClosing}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Main recommendation card */}
           <div className="rec-card">
             <div className="rec-card-inner">
 
               <div className="rec-card-img-wrap">
-                <img src={recommended.image} alt={recommended.name} className="rec-card-img" />
+                <img src={primaryActivity.image} alt={primaryActivity.name} className="rec-card-img" />
                 <div className="rec-card-img-overlay" />
-                <span className="rec-card-img-badge">✦ Top Pick</span>
+                <span className="rec-card-img-badge">✦ #{primaryActivity.rank} Pick</span>
               </div>
 
               <div className="rec-card-content">
@@ -605,13 +686,13 @@ export default function RecommendationPage() {
                     AI Recommended
                   </div>
 
-                  <span className="rec-card-badge">{recommended.category}</span>
-                  <h2 className="rec-card-title">{recommended.name}</h2>
+                  <span className="rec-card-badge">{primaryActivity.category}</span>
+                  <h2 className="rec-card-title">{primaryActivity.name}</h2>
                   <div className="rec-card-divider" />
 
                   <p className="rec-card-reason-label">Why this is perfect for you</p>
                   <p className="rec-card-reason">
-                    {recommended.aiReason || recommended.description}
+                    {primaryActivity.aiReason || primaryActivity.description}
                   </p>
                 </div>
 
@@ -619,27 +700,27 @@ export default function RecommendationPage() {
                   <div className="rec-card-meta">
                     <div className="rec-meta-item">
                       <span className="rec-meta-label">Duration</span>
-                      <span className="rec-meta-value">{recommended.duration}</span>
+                      <span className="rec-meta-value">{primaryActivity.duration}</span>
                     </div>
                     <div className="rec-meta-item">
                       <span className="rec-meta-label">Level</span>
-                      <span className="rec-meta-value">{recommended.level}</span>
+                      <span className="rec-meta-value">{primaryActivity.level}</span>
                     </div>
                     <div className="rec-meta-item">
                       <span className="rec-meta-label">Rating</span>
-                      <span className="rec-meta-value">⭐ {recommended.rating} ({recommended.reviews})</span>
+                      <span className="rec-meta-value">⭐ {primaryActivity.rating} ({primaryActivity.reviews})</span>
                     </div>
                   </div>
 
                   <div className="rec-price-row">
                     <span className="rec-price-currency">$</span>
-                    <span className="rec-price-amount">{recommended.price}</span>
+                    <span className="rec-price-amount">{primaryActivity.price}</span>
                     <span className="rec-price-note">per person</span>
                   </div>
 
                   <button
                     className="rec-cta"
-                    onClick={() => navigate(`/activity/${recommended.id}`)}
+                    onClick={() => navigate(`/activity/${primaryActivity.id}`)}
                   >
                     Book This Experience →
                   </button>
@@ -648,21 +729,46 @@ export default function RecommendationPage() {
             </div>
           </div>
 
-          {/* Other activities */}
-          {otherActivities.length > 0 && (
+          {/* Other top recommendations */}
+          {topActivities.length > 1 && (
             <>
-              <p className="rec-also-label">You might also enjoy</p>
+              <p className="rec-also-label" style={{ marginTop: 36 }}>Your Top 3 Recommendations</p>
               <div className="rec-also-grid">
-                {otherActivities.map(act => (
+                {topActivities.slice(1).map(act => (
                   <div
                     key={act.id}
                     className="rec-also-card"
                     onClick={() => navigate(`/activity/${act.id}`)}
                   >
-                    <img src={act.image} alt={act.name} className="rec-also-img" />
+                    <div style={{ position: 'relative' }}>
+                      <img src={act.image} alt={act.name} className="rec-also-img" />
+                      <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        left: 10,
+                        background: 'rgba(255,255,255,0.9)',
+                        backdropFilter: 'blur(6px)',
+                        padding: '4px 12px',
+                        borderRadius: 100,
+                        fontSize: '0.68rem',
+                        fontWeight: 600,
+                        color: '#c9a87c',
+                      }}>
+                        ✦ #{act.rank} Pick
+                      </div>
+                    </div>
                     <div className="rec-also-body">
                       <p className="rec-also-name">{act.name}</p>
                       <p className="rec-also-meta">{act.category} · {act.duration}</p>
+                      <p style={{
+                        fontSize: '0.78rem',
+                        color: '#6b6357',
+                        marginTop: 8,
+                        lineHeight: 1.5,
+                        minHeight: 40,
+                      }}>
+                        {act.aiReason}
+                      </p>
                       <p className="rec-also-price">${act.price}</p>
                     </div>
                   </div>

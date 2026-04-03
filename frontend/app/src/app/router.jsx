@@ -7,80 +7,38 @@ import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
 import FoodMenu from "../pages/FoodPage/FoodList.jsx";
 import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
-import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
-import ChatbotQuiz from "../pages/RecommendationPage/ChatbotQuiz.jsx"
-import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
+import ResultPage from "../pages/RecommendationPage/ResultPage.jsx";
 
-// Protected route wrapper
 const Protected = ({ user, children }) => {
   if (!user) return <Navigate to="/login" replace />;
   return children;
 };
 
-// Layout wrapper that includes ChatWidget
-const LayoutWithChat = ({ ChatWidget }) => {
-  return (
-    <>
-      <Outlet />
-      <ChatWidget />
-    </>
-  );
-};
+const LayoutWithChat = ({ ChatWidget }) => (
+  <>
+    <Outlet />
+    <ChatWidget />
+  </>
+);
 
 export const router = (user, ChatWidget) =>
   createBrowserRouter([
     {
       element: <LayoutWithChat ChatWidget={ChatWidget} />,
       children: [
-        // home
-        { path: "/", element: <HomePage /> },
-        // auth
-        { path: "/login", element: <LoginPage /> },
-        { path: "/register", element: <RegisterPage /> },
-        {
-          path: "/activities",
-          element: <ActivityList />,
-        },
-        {
-          path: "/activity/:id",
-          element: <ActivityDetail />,
-        },
-        // AI quiz (legacy form-based)
-        { path: "/quiz",
-          element: <Questionnaire />
-        },
-        // AI quiz (chatbot UI)
-        { path: "/quiz/chat",
-          element: <ChatbotQuiz />
-        },
-        // quiz result
-        { path: "/quiz/result/:submissionId",
-          element: <Recommendation />
-        },
-
-        {
-          path: "/menu",
-          element: <FoodMenu />,
-        },
-        {
-          path: "/menu/:id",
-          element: <FoodDetail />
-        },
-        {
-          path: "/cart",
-          element: <Cart />
-        },
-        {
-          path: "/saved-experiences",
-          element: <SavedExperiences />
-        },
-        {
-          path: "/payment",
-          element: <PaymentPage />,
-        },
+        { path: "/",                          element: <HomePage /> },
+        { path: "/login",                     element: <LoginPage /> },
+        { path: "/register",                  element: <RegisterPage /> },
+        { path: "/activities",                element: <ActivityList /> },
+        { path: "/activity/:id",              element: <ActivityDetail /> },
+        { path: "/menu",                      element: <FoodMenu /> },
+        { path: "/menu/:id",                  element: <FoodDetail /> },
+        { path: "/cart",                      element: <Cart /> },
+        { path: "/saved-experiences",         element: <SavedExperiences /> },
+        { path: "/payment",                   element: <PaymentPage /> },
+        { path: "/quiz/result/:submissionId", element: <ResultPage /> },
       ],
     },
-]);
-
+  ]);

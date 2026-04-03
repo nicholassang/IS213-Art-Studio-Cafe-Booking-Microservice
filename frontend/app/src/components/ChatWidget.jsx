@@ -1,14 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_GATEWAY = "http://localhost:8000";
-
-const CATEGORY_LABELS = {
-  food_and_drink: "Food & Drink",
-  activity_preferences: "Activity Preferences",
-  ambience_and_vibe: "Ambience & Vibe",
-  visit_style_and_occasion: "Visit Style & Occasion",
-};
+import { API_GATEWAY, CATEGORY_LABELS, getOrCreateUserId } from "../constants";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
@@ -66,7 +58,7 @@ const styles = `
     to   { opacity: 1; transform: translateY(0) scale(1); }
   }
 
-  /* ── Popup header ── */
+  /* ── Header ── */
   .chat-popup-header {
     background: #1a1612;
     padding: 12px 16px;
@@ -101,7 +93,7 @@ const styles = `
   }
   .chat-popup-close:hover { color: #faf8f5; }
 
-  /* ── Messages area ── */
+  /* ── Messages ── */
   .chat-popup-messages {
     flex: 1;
     overflow-y: auto;
@@ -110,8 +102,11 @@ const styles = `
     flex-direction: column;
     gap: 12px;
   }
+  .chat-popup-messages::-webkit-scrollbar { width: 4px; }
+  .chat-popup-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-popup-messages::-webkit-scrollbar-thumb { background: #e2dbd2; border-radius: 4px; }
 
-  /* ── Message bubbles ── */
+  /* ── Bubbles ── */
   .chat-msg {
     display: flex;
     gap: 8px;
@@ -157,12 +152,6 @@ const styles = `
     border-top-right-radius: 4px;
   }
 
-  .chat-bubble-question {
-    font-family: 'Playfair Display', serif;
-    font-size: 0.92rem;
-    font-weight: 600;
-    margin-bottom: 2px;
-  }
   .chat-bubble-category {
     font-size: 0.6rem;
     letter-spacing: 0.08em;
@@ -170,6 +159,11 @@ const styles = `
     color: #c9a87c;
     font-weight: 500;
     margin-bottom: 4px;
+  }
+  .chat-bubble-question {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.92rem;
+    font-weight: 600;
   }
 
   /* ── Edit button ── */
@@ -208,52 +202,6 @@ const styles = `
     30% { transform: translateY(-5px); opacity: 1; }
   }
 
-  /* ── Input area ── */
-  .chat-popup-input {
-    border-top: 1px solid #ede8e1;
-    padding: 10px 12px;
-    background: #fff;
-    flex-shrink: 0;
-  }
-  .chat-popup-input-wrap {
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-  }
-  .chat-popup-input textarea {
-    flex: 1;
-    border: 1.5px solid #e2dbd2;
-    border-radius: 20px;
-    padding: 8px 14px;
-    font-size: 0.85rem;
-    font-family: 'DM Sans', sans-serif;
-    resize: none;
-    max-height: 80px;
-    line-height: 1.45;
-    transition: border-color 0.2s;
-    background: #faf8f5;
-    color: #241c17;
-  }
-  .chat-popup-input textarea:focus { outline: none; border-color: #c9a87c; }
-  .chat-popup-input textarea::placeholder { color: #aaa098; }
-  .chat-popup-send {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: #1a1612;
-    color: #faf8f5;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.95rem;
-    transition: background 0.2s, transform 0.15s;
-    flex-shrink: 0;
-  }
-  .chat-popup-send:hover:not(:disabled) { background: #c9a87c; transform: scale(1.05); }
-  .chat-popup-send:disabled { opacity: 0.4; cursor: not-allowed; }
-
   /* ── Section divider ── */
   .chat-section-divider {
     display: flex;
@@ -271,8 +219,55 @@ const styles = `
     white-space: nowrap;
   }
 
+  /* ── Input ── */
+  .chat-popup-input-area {
+    border-top: 1px solid #ede8e1;
+    padding: 10px 12px;
+    background: #fff;
+    flex-shrink: 0;
+  }
+  .chat-popup-input-wrap {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-popup-textarea {
+    flex: 1;
+    border: 1.5px solid #e2dbd2;
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    font-family: 'DM Sans', sans-serif;
+    resize: none;
+    max-height: 80px;
+    line-height: 1.45;
+    transition: border-color 0.2s;
+    background: #faf8f5;
+    color: #241c17;
+  }
+  .chat-popup-textarea:focus { outline: none; border-color: #c9a87c; }
+  .chat-popup-textarea::placeholder { color: #aaa098; }
+
+  .chat-send-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #1a1612;
+    color: #faf8f5;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: background 0.2s, transform 0.15s;
+    flex-shrink: 0;
+  }
+  .chat-send-btn:hover:not(:disabled) { background: #c9a87c; transform: scale(1.05); }
+  .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
   /* ── Submit button ── */
-  .chat-popup-submit {
+  .chat-submit-btn {
     display: block;
     width: 100%;
     padding: 11px 16px;
@@ -288,18 +283,18 @@ const styles = `
     transition: transform 0.15s, box-shadow 0.2s;
     margin-top: 8px;
   }
-  .chat-popup-submit:hover {
+  .chat-submit-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(201,168,124,0.3);
   }
 
-  /* ── Mini loading ── */
+  /* ── Loading ── */
   .chat-popup-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    flex: 1;
     gap: 12px;
   }
   .chat-popup-loader-ring {
@@ -315,7 +310,6 @@ const styles = `
     font-family: 'Playfair Display', serif;
     font-size: 0.85rem;
     color: #1a1612;
-    text-align: center;
   }
 
   /* ── Error ── */
@@ -327,13 +321,8 @@ const styles = `
     padding: 8px 12px;
     font-size: 0.78rem;
     text-align: center;
-    margin: 8px 12px;
+    margin: 0 4px;
   }
-
-  /* ── Scrollbar ── */
-  .chat-popup-messages::-webkit-scrollbar { width: 4px; }
-  .chat-popup-messages::-webkit-scrollbar-track { background: transparent; }
-  .chat-popup-messages::-webkit-scrollbar-thumb { background: #e2dbd2; border-radius: 4px; }
 `;
 
 export default function ChatWidget() {
@@ -341,7 +330,11 @@ export default function ChatWidget() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Stable user ID — never recomputed on re-render
+  const userId = useRef(getOrCreateUserId()).current;
+
   const [isOpen, setIsOpen] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -353,15 +346,8 @@ export default function ChatWidget() {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState(null);
-  const [initialized, setInitialized] = useState(false);
 
-  const USER_ID = "user-" + (localStorage.getItem("quiz_user_id") || (() => {
-    const id = Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("quiz_user_id", id);
-    return id;
-  })());
-
-  // Initialize session when popup is first opened
+  // Start session only once, when popup is first opened
   useEffect(() => {
     if (!isOpen || initialized) return;
 
@@ -370,24 +356,19 @@ export default function ChatWidget() {
         const res = await fetch(`${API_GATEWAY}/quiz/session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: USER_ID }),
+          body: JSON.stringify({ user_id: userId }),
         });
         if (!res.ok) throw new Error("Failed to start session");
         const data = await res.json();
+
         setSessionId(data.session_id);
         setQuestions(data.questions);
+        setMessages([{
+          type: "bot",
+          text: "Welcome! I'd love to help you discover your perfect creative experience. Let's start with a few questions — just answer in your own words.",
+        }]);
 
-        setMessages([
-          {
-            type: "bot",
-            text: "Welcome! I'd love to help you discover your perfect creative experience. Let's start with a few questions — just answer in your own words.",
-          },
-        ]);
-
-        setTimeout(() => {
-          addQuestionMessage(data.questions, 0);
-        }, 600);
-
+        setTimeout(() => addQuestionMessage(data.questions, 0), 600);
         setLoading(false);
         setInitialized(true);
       } catch {
@@ -395,30 +376,26 @@ export default function ChatWidget() {
         setLoading(false);
       }
     };
+
     startSession();
   }, [isOpen]);
 
   // Auto-scroll
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isOpen]);
 
-  // Focus input
+  // Focus input after new message
   useEffect(() => {
-    if (isOpen && !isTyping && messages.length > 0) {
-      inputRef.current?.focus();
-    }
+    if (isOpen && !isTyping) inputRef.current?.focus();
   }, [messages, isTyping, isOpen]);
 
   const addQuestionMessage = (qs, index) => {
     const q = qs[index];
     const prevCategory = index > 0 ? qs[index - 1]?.category : null;
-    const categoryChanged = q && prevCategory !== q.category;
-
     const newMessages = [];
-    if (categoryChanged && index > 0) {
+
+    if (q.category !== prevCategory && index > 0) {
       newMessages.push({ type: "divider", category: q.category });
     }
     newMessages.push({
@@ -427,42 +404,19 @@ export default function ChatWidget() {
       questionId: q.question_id,
       text: q.text,
     });
+
     setMessages(prev => [...prev, ...newMessages]);
   };
 
-  const handleSend = () => {
-    const text = inputValue.trim();
-    if (!text || !questions[currentQIndex]) return;
-
-    const q = questions[currentQIndex];
-
-    setMessages(prev => [...prev, {
-      type: "user",
-      questionId: q.question_id,
-      text,
-    }]);
-
-    setAnswers(prev => ({ ...prev, [q.question_id]: text }));
-    submitAnswer(q.question_id, text);
-    setInputValue("");
-    setEditingQuestionId(null);
-
-    if (currentQIndex < questions.length - 1) {
-      setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        const nextIndex = currentQIndex + 1;
-        setCurrentQIndex(nextIndex);
-        addQuestionMessage(questions, nextIndex);
-      }, 500);
-    }
-  };
-
-  const submitAnswer = async (questionId, text) => {
+  const submitAnswerToBackend = async (questionId, text, isEdit = false) => {
     if (!sessionId) return;
     try {
-      await fetch(`${API_GATEWAY}/quiz/session/${sessionId}/answer`, {
-        method: "POST",
+      const url = isEdit
+        ? `${API_GATEWAY}/quiz/session/${sessionId}/answer/${questionId}`
+        : `${API_GATEWAY}/quiz/session/${sessionId}/answer`;
+      const method = isEdit ? "PUT" : "POST";
+      await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question_id: questionId, answer_text: text }),
       });
@@ -471,10 +425,25 @@ export default function ChatWidget() {
     }
   };
 
-  const handleEdit = (questionId) => {
-    setEditingQuestionId(questionId);
-    setInputValue(answers[questionId] || "");
-    inputRef.current?.focus();
+  const handleSend = () => {
+    const text = inputValue.trim();
+    if (!text || !questions[currentQIndex]) return;
+
+    const q = questions[currentQIndex];
+    setMessages(prev => [...prev, { type: "user", questionId: q.question_id, text }]);
+    setAnswers(prev => ({ ...prev, [q.question_id]: text }));
+    submitAnswerToBackend(q.question_id, text, false);
+    setInputValue("");
+
+    if (currentQIndex < questions.length - 1) {
+      setIsTyping(true);
+      setTimeout(() => {
+        setIsTyping(false);
+        const next = currentQIndex + 1;
+        setCurrentQIndex(next);
+        addQuestionMessage(questions, next);
+      }, 500);
+    }
   };
 
   const handleEditSubmit = () => {
@@ -489,27 +458,29 @@ export default function ChatWidget() {
           : msg
       )
     );
-    submitAnswer(editingQuestionId, text);
+    submitAnswerToBackend(editingQuestionId, text, true);
     setInputValue("");
     setEditingQuestionId(null);
   };
 
+  const handleEdit = (questionId) => {
+    setEditingQuestionId(questionId);
+    setInputValue(answers[questionId] || "");
+    inputRef.current?.focus();
+  };
+
   const handleFinalSubmit = async () => {
     setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch(`${API_GATEWAY}/quiz/session/${sessionId}/submit`, {
         method: "POST",
       });
-      if (!res.ok) {
-        const errorBody = await res.text();
-        console.error("Submit failed:", res.status, errorBody);
-        throw new Error(`Submission failed with status ${res.status}: ${errorBody}`);
-      }
+      if (!res.ok) throw new Error(`Submission failed (${res.status})`);
       const data = await res.json();
       setIsOpen(false);
       navigate(`/quiz/result/${data.submission_id}`);
     } catch (err) {
-      console.error("handleFinalSubmit error:", err);
       setError(err.message || "Something went wrong. Please try again.");
       setSubmitting(false);
     }
@@ -518,11 +489,7 @@ export default function ChatWidget() {
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (editingQuestionId) {
-        handleEditSubmit();
-      } else {
-        handleSend();
-      }
+      editingQuestionId ? handleEditSubmit() : handleSend();
     }
   };
 
@@ -538,7 +505,7 @@ export default function ChatWidget() {
       <button
         className={`chat-fab${isOpen ? " chat-fab-open" : ""}`}
         onClick={() => setIsOpen(prev => !prev)}
-        title="Chat with our assistant"
+        title="Discover your creative profile"
       >
         {isOpen ? "✕" : "✦"}
       </button>
@@ -565,49 +532,43 @@ export default function ChatWidget() {
           {!loading && (
             <div className="chat-popup-messages">
               {messages.map((msg, i) => {
-                if (msg.type === "divider") {
-                  return (
-                    <div key={`div-${i}`} className="chat-section-divider">
-                      <div className="chat-section-line" />
-                      <span className="chat-section-label">
-                        {CATEGORY_LABELS[msg.category] || msg.category}
-                      </span>
-                      <div className="chat-section-line" />
-                    </div>
-                  );
-                }
+                if (msg.type === "divider") return (
+                  <div key={`div-${i}`} className="chat-section-divider">
+                    <div className="chat-section-line" />
+                    <span className="chat-section-label">
+                      {CATEGORY_LABELS[msg.category] || msg.category}
+                    </span>
+                    <div className="chat-section-line" />
+                  </div>
+                );
 
-                if (msg.type === "bot") {
-                  return (
-                    <div key={`bot-${i}`} className="chat-msg bot">
-                      <div className="chat-avatar">✦</div>
-                      <div className="chat-bubble">
+                if (msg.type === "bot") return (
+                  <div key={`bot-${i}`} className="chat-msg bot">
+                    <div className="chat-avatar">✦</div>
+                    <div className="chat-bubble">
+                      {msg.category && (
                         <div className="chat-bubble-category">
                           {CATEGORY_LABELS[msg.category] || msg.category}
                         </div>
-                        <div className="chat-bubble-question">{msg.text}</div>
-                      </div>
+                      )}
+                      <div className="chat-bubble-question">{msg.text}</div>
                     </div>
-                  );
-                }
+                  </div>
+                );
 
-                if (msg.type === "user") {
-                  return (
-                    <div key={`user-${i}`} className="chat-msg user">
-                      <div className="chat-avatar">You</div>
-                      <div className="chat-bubble" style={{ position: "relative" }}>
-                        {msg.text}
-                        <button
-                          className="chat-edit-btn"
-                          onClick={() => handleEdit(msg.questionId)}
-                          title="Edit answer"
-                        >
-                          ✏️
-                        </button>
-                      </div>
+                if (msg.type === "user") return (
+                  <div key={`user-${i}`} className="chat-msg user">
+                    <div className="chat-avatar">You</div>
+                    <div className="chat-bubble">
+                      {msg.text}
+                      <button
+                        className="chat-edit-btn"
+                        onClick={() => handleEdit(msg.questionId)}
+                        title="Edit answer"
+                      >✏️</button>
                     </div>
-                  );
-                }
+                  </div>
+                );
 
                 return null;
               })}
@@ -626,7 +587,7 @@ export default function ChatWidget() {
               )}
 
               {allAnswered && !submitting && (
-                <button className="chat-popup-submit" onClick={handleFinalSubmit}>
+                <button className="chat-submit-btn" onClick={handleFinalSubmit}>
                   Submit & Get My Personality Profile →
                 </button>
               )}
@@ -639,31 +600,23 @@ export default function ChatWidget() {
 
           {/* Input */}
           {!loading && !allAnswered && !submitting && (
-            <div className="chat-popup-input">
+            <div className="chat-popup-input-area">
               <div className="chat-popup-input-wrap">
                 <textarea
                   ref={inputRef}
-                  className="chat-popup-input"
+                  className="chat-popup-textarea"
                   rows={1}
-                  placeholder={
-                    editingQuestionId
-                      ? "Edit your answer…"
-                      : currentQ
-                      ? "Type your answer…"
-                      : "Loading…"
-                  }
+                  placeholder={editingQuestionId ? "Edit your answer…" : currentQ ? "Type your answer…" : "Loading…"}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={!currentQ}
                 />
                 <button
-                  className="chat-popup-send"
+                  className="chat-send-btn"
                   onClick={editingQuestionId ? handleEditSubmit : handleSend}
                   disabled={!inputValue.trim() || !currentQ}
-                >
-                  ↑
-                </button>
+                >↑</button>
               </div>
             </div>
           )}
