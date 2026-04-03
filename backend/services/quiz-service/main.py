@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
-import aio_pika
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, field_validator
@@ -26,12 +25,6 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"],
 )
 
-RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
-QUIZ_EXCHANGE: str = os.getenv("QUIZ_EXCHANGE", "quiz_events")
-
-_quiz_exchange: Optional[aio_pika.abc.AbstractExchange] = None
-_rabbitmq_connection = None
-
 # ── In-memory session store ───────────────────────────────────────────────
 # session_id → { "user_id", "questions": [...], "answers": {question_id: text} }
 _sessions: dict[str, dict] = {}
@@ -44,37 +37,7 @@ TOTAL_QUESTIONS = QUESTIONS_PER_SECTION * len(CATEGORIES)  # 8
 # ── Lifespan ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _rabbitmq_connection, _quiz_exchange
-
-    # Retry RabbitMQ connection with backoff (handles startup race conditions)
-    max_retries = 10
-    retry_delay = 3
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info(f"Connecting to RabbitMQ (attempt {attempt}/{max_retries})...")
-            _rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=10)
-            channel = await _rabbitmq_connection.channel()
-            _quiz_exchange = await channel.declare_exchange(
-                QUIZ_EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True
-            )
-            logger.info("Connected to RabbitMQ successfully.")
-            break
-        except Exception as exc:
-            if attempt < max_retries:
-                logger.warning(
-                    f"RabbitMQ connection failed (attempt {attempt}/{max_retries}): {exc}. "
-                    f"Retrying in {retry_delay}s..."
-                )
-                import asyncio
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error(f"RabbitMQ unavailable after {max_retries} attempts – async events disabled. ({exc})")
-                _rabbitmq_connection = None
-
     yield
-
-    if _rabbitmq_connection and not _rabbitmq_connection.is_closed:
-        await _rabbitmq_connection.close()
 
 
 app = FastAPI(
@@ -138,24 +101,6 @@ def _get_session_or_404(session_id: str) -> dict:
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     return session
-
-
-async def _publish(routing_key: str, payload: dict) -> None:
-    if _quiz_exchange is None:
-        logger.warning(f"Cannot publish to RabbitMQ - exchange not initialized (routing_key: {routing_key})")
-        return
-    try:
-        await _quiz_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(payload).encode(),
-                content_type="application/json",
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ),
-            routing_key=routing_key,
-        )
-        logger.info(f"Published message to '{QUIZ_EXCHANGE}' with routing key '{routing_key}'")
-    except Exception as exc:
-        logger.error(f"Failed to publish '{routing_key}': {exc}")
 
 
 # ── Question bank endpoint ───────────────────────────────────────────────
@@ -272,7 +217,8 @@ async def submit_session(session_id: str):
     Finalise a quiz session:
     - Validates all 8 answers are present.
     - Persists to Supabase (quiz_submissions table).
-    - Publishes to RabbitMQ for AI microservice to consume.
+    - Returns the full Q&A payload to the caller (composite) for AI processing.
+    NOTE: No longer publishes to RabbitMQ — the composite orchestrates the next step.
     """
     session = _get_session_or_404(session_id)
 
@@ -306,16 +252,15 @@ async def submit_session(session_id: str):
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to save submission to Supabase.")
 
-    await _publish("quiz.submitted", record)
-
     # Clean up session from memory after successful submission
     _sessions.pop(session_id, None)
 
+    # Return full Q&A payload so the composite can pass it to the AI atomic
     return {
         "submission_id": submission_id,
         "user_id": session["user_id"],
         "submitted_at": submitted_at,
-        "answer_count": len(answers_list),
+        "answers": answers_list,
     }
 
 
@@ -334,3 +279,9 @@ async def get_submission(submission_id: str):
         raise HTTPException(status_code=404, detail="Submission not found.")
 
     return result.data[0]
+
+
+# ── Health ────────────────────────────────────────────────────────────────
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
