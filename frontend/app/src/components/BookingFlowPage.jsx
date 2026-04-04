@@ -47,7 +47,7 @@ export default function BookingPage() {
         setMenuItems(menuResp.data.menu || []);
       } catch (err) {
         console.error("Could not load booking options", err);
-        setStatusMessage("Unable to load activities or food menu. Try again soon.");
+        setStatusMessage("Unable to load activities or food menu. Try again soon or refresh your browser.");
       }
     };
 

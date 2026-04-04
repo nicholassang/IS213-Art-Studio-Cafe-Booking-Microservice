@@ -10,7 +10,6 @@ import re
 
 app = FastAPI()
 
-
 # Allow frontend later to access this service
 app.add_middleware(
     CORSMiddleware,
