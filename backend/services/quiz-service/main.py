@@ -9,14 +9,13 @@ import aio_pika
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
-from supabase import create_client, Client
+from psycopg import connect
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 load_dotenv()
 
-# Supabase client
-SUPABASE_URL: str = os.environ["SUPABASE_URL"]
-SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+DATABASE_URL: str = os.environ["DATABASE_URL"]
 
 
 # RabbitMQ
@@ -25,6 +24,40 @@ QUIZ_EXCHANGE: str = os.getenv("QUIZ_EXCHANGE", "quiz_events")
 
 _quiz_exchange: Optional[aio_pika.abc.AbstractExchange] = None
 _rabbitmq_connection = None
+
+QUIZ_SUBMISSION_COLUMNS = "submission_id, user_id, answers, submitted_at"
+
+
+def fetch_all(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+
+
+def fetch_one(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
+
+
+def execute_write(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            row = cur.fetchone()
+        conn.commit()
+    return row
+
+
+def execute_write_all(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+        conn.commit()
+    return rows
 
 
 @asynccontextmanager
@@ -433,7 +466,7 @@ async def submit_answers(payload: QuizSubmission):
     Validate and store a user's answers to the predefined questions.
 
     - Validates every answer against the question bank.
-    - Persists the full submission to Supabase (`quiz_submissions` table).
+    - Persists the full submission to Postgres (`quiz_submissions` table).
     - Publishes a `quiz.submitted` event to RabbitMQ so the
       Recommendation service can build a personalised activity list.
     """
@@ -442,15 +475,20 @@ async def submit_answers(payload: QuizSubmission):
     submission_id = str(uuid.uuid4())
     submitted_at = _now_iso()
 
-    record = {
-        "submission_id": submission_id,
-        "user_id": payload.user_id,
-        "answers": [a.model_dump() for a in payload.answers],
-        "submitted_at": submitted_at,
-    }
-
-    result = supabase.table("quiz_submissions").insert(record).execute()
-    if not result.data:
+    created_submission = execute_write(
+        f"""
+        INSERT INTO quiz_submissions (submission_id, user_id, answers, submitted_at)
+        VALUES (%s, %s, %s, %s)
+        RETURNING {QUIZ_SUBMISSION_COLUMNS}
+        """,
+        (
+            submission_id,
+            payload.user_id,
+            Jsonb([a.model_dump() for a in payload.answers]),
+            submitted_at,
+        ),
+    )
+    if not created_submission:
         raise HTTPException(status_code=500, detail="Failed to save submission.")
 
     # Publish event → consumed by Recommendation service
@@ -475,43 +513,49 @@ async def submit_answers(payload: QuizSubmission):
 
 @app.get("/quiz/submissions", tags=["Quiz"])
 def list_submissions(user_id: Optional[str] = None):
-    query = supabase.table("quiz_submissions").select("*")
     if user_id:
-        query = query.eq("user_id", user_id)
-    result = query.order("submitted_at", desc=True).execute()
-    return result.data or []
+        return fetch_all(
+            f"SELECT {QUIZ_SUBMISSION_COLUMNS} FROM quiz_submissions WHERE user_id = %s ORDER BY submitted_at DESC",
+            (user_id,),
+        )
+
+    return fetch_all(
+        f"SELECT {QUIZ_SUBMISSION_COLUMNS} FROM quiz_submissions ORDER BY submitted_at DESC"
+    )
 
 
 @app.get("/quiz/submissions/{submission_id}", tags=["Quiz"])
 def get_submission(submission_id: str):
-    result = (
-        supabase.table("quiz_submissions")
-        .select("*")
-        .eq("submission_id", submission_id)
-        .limit(1)
-        .execute()
+    submission = fetch_one(
+        f"SELECT {QUIZ_SUBMISSION_COLUMNS} FROM quiz_submissions WHERE submission_id = %s LIMIT 1",
+        (submission_id,),
     )
-    if not result.data:
+    if not submission:
         raise HTTPException(status_code=404, detail="No submission found.")
-    return result.data[0]
+    return submission
 
 
 @app.put("/quiz/submissions/{submission_id}", response_model=QuizSubmissionResponse, tags=["Quiz"])
 def update_submission(submission_id: str, payload: QuizSubmission):
     _validate_answers(payload.answers)
     submitted_at = _now_iso()
-    update_data = {
-        "user_id": payload.user_id,
-        "answers": [a.model_dump() for a in payload.answers],
-        "submitted_at": submitted_at,
-    }
-    result = (
-        supabase.table("quiz_submissions")
-        .update(update_data)
-        .eq("submission_id", submission_id)
-        .execute()
+    updated_submission = execute_write(
+        f"""
+        UPDATE quiz_submissions
+        SET user_id = %s,
+            answers = %s,
+            submitted_at = %s
+        WHERE submission_id = %s
+        RETURNING {QUIZ_SUBMISSION_COLUMNS}
+        """,
+        (
+            payload.user_id,
+            Jsonb([a.model_dump() for a in payload.answers]),
+            submitted_at,
+            submission_id,
+        ),
     )
-    if not result.data:
+    if not updated_submission:
         raise HTTPException(status_code=404, detail="No submission found to update.")
     return {
         "submission_id": submission_id,
@@ -523,13 +567,11 @@ def update_submission(submission_id: str, payload: QuizSubmission):
 
 @app.delete("/quiz/submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Quiz"])
 def delete_submission(submission_id: str):
-    result = (
-        supabase.table("quiz_submissions")
-        .delete()
-        .eq("submission_id", submission_id)
-        .execute()
+    deleted_submission = execute_write(
+        "DELETE FROM quiz_submissions WHERE submission_id = %s RETURNING submission_id",
+        (submission_id,),
     )
-    if not result.data:
+    if not deleted_submission:
         raise HTTPException(status_code=404, detail="No submission found to delete.")
     return
 
@@ -541,14 +583,10 @@ def get_user_submission(user_id: str):
     Useful for the Recommendation service or frontend to check
     whether the user has already completed the quiz.
     """
-    result = (
-        supabase.table("quiz_submissions")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("submitted_at", desc=True)
-        .limit(1)
-        .execute()
+    submission = fetch_one(
+        f"SELECT {QUIZ_SUBMISSION_COLUMNS} FROM quiz_submissions WHERE user_id = %s ORDER BY submitted_at DESC LIMIT 1",
+        (user_id,),
     )
-    if not result.data:
+    if not submission:
         raise HTTPException(status_code=404, detail="No submission found for this user.")
-    return result.data[0]
+    return submission

@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
 from dotenv import load_dotenv
+from psycopg import connect
+from psycopg.rows import dict_row
 import os
 
 load_dotenv()
@@ -21,41 +22,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase connection
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required for menu-service")
+
+
+def fetch_all(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+
+
+def fetch_one(query: str, params: tuple = ()):
+    with connect(DATABASE_URL, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
 
 # Health check
 @app.get("/")
 def home():
-    return {"message": "Food Menu Service is running"}
+    return {"message": "Food Menu Service is running", "storage": "postgres"}
 
 # Get all menu
 @app.get("/menu/all")
 def get_menu():
-    res = supabase.table("menu_items").select("*").execute()
-    return {"menu": res.data}
+    items = fetch_all("SELECT * FROM menu_items ORDER BY id")
+    return {"menu": items}
 
 # Get single item by name
 @app.get("/menu/name/{name}")
 def get_item_by_name(name: str):
     formatted = name.replace("-", " ").title()
-    res = supabase.table("menu_items").select("*").ilike("name", formatted).execute()
-    if not res.data:
+    item = fetch_one(
+        "SELECT * FROM menu_items WHERE name ILIKE %s LIMIT 1",
+        (formatted,),
+    )
+    if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return res.data[0]
+    return item
 
 # Get single item by id
 @app.get("/menu/{item_id}")
 def get_item(item_id: int):
-    res = supabase.table("menu_items").select("*").eq("id", item_id).execute()
-    if not res.data:
+    item = fetch_one(
+        "SELECT * FROM menu_items WHERE id = %s LIMIT 1",
+        (item_id,),
+    )
+    if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return res.data[0]
+    return item
 
 # Filter by category
 @app.get("/menu/category/{category}")
 def get_by_category(category: str):
-    res = supabase.table("menu_items").select("*").ilike("category", category).execute()
-    return {"menu": res.data}
+    items = fetch_all(
+        "SELECT * FROM menu_items WHERE category ILIKE %s ORDER BY id",
+        (category,),
+    )
+    return {"menu": items}
