@@ -100,22 +100,7 @@ services:
       - "8007:8000"
     env_file:
       - ./wrappers/payment-wrapper/.env
-
-  # ai-recommendation-wrapper:
-  #   build: ./wrappers/ai-recommendation-wrapper
-  #   container_name: ai-recommendation-wrapper
-  #   ports:
-  #     - "8006:8000"
-  #   env_file:
-  #     - ./wrappers/ai-recommendation-wrapper/.env
-  # payment-wrapper:
-  #   build: ./wrappers/payment-wrapper
-  #   container_name: payment-wrapper
-  #   ports:
-  #    - "8007:8000"
-  #   env_file:
-  #    - ./wrappers/payment-wrapper/.env
-  #
+      
   notification-service:
     build:
       context: .

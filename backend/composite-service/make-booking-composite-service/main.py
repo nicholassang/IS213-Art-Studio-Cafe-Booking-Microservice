@@ -29,8 +29,27 @@ NOTIFICATION_URL = os.getenv("NOTIFICATION_URL", "http://notification-service:80
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 BOOKING_EVENTS_EXCHANGE = "booking.events"
 BOOKING_CONFIRMED_ROUTING_KEY = "booking.confirmed"
+PAYMENT_CURRENCY = os.getenv("PAYMENT_CURRENCY", "sgd")
+DEFAULT_PAYMENT_METHOD = os.getenv("DEFAULT_PAYMENT_METHOD", "pm_card_visa")
 
 logger = logging.getLogger(__name__)
+
+
+def to_minor_units(amount: float) -> int:
+    return max(1, int(round(amount * 100)))
+
+
+def normalize_payment_method(payment_method: Optional[str]) -> str:
+    if not payment_method:
+        return DEFAULT_PAYMENT_METHOD
+
+    normalized = payment_method.strip().lower()
+    generic_card_methods = {"card", "credit_card", "credit-card", "debit_card", "debit-card"}
+
+    if normalized in generic_card_methods:
+        return DEFAULT_PAYMENT_METHOD
+
+    return payment_method
 
 
 class FoodItem(BaseModel):
@@ -128,17 +147,30 @@ async def create_booking(payload: BookingRequest):
 
         # process payment via wrapper
         payment_resp = await client.post(
-            f"{PAYMENT_URL}/process-payment",
+            f"{PAYMENT_URL}/payment/process",
             json={
-                "amount": total_amount,
-                "currency": "USD",
-                "payment_method": payload.payment_method,
-                "description": f"Booking for {activity.get('name', payload.activity_id)}",
+                "Amount": to_minor_units(total_amount),
+                "Currency": PAYMENT_CURRENCY,
+                "PaymentMethod": normalize_payment_method(payload.payment_method),
+                "VoucherCode": "",
             },
         )
 
         if payment_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Payment service failed")
+            payment_error = None
+            try:
+                payment_error = payment_resp.json()
+            except ValueError:
+                payment_error = payment_resp.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Payment service failed",
+                    "downstream_status": payment_resp.status_code,
+                    "downstream_response": payment_error,
+                },
+            )
 
         payment = payment_resp.json()
 
