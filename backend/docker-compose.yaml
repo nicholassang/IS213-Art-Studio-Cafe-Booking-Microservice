@@ -36,6 +36,24 @@ services:
       timeout: 5s
       retries: 5
 
+  user-db:
+    image: postgres:16
+    container_name: user-db
+    environment:
+      - POSTGRES_DB=user_db
+      - POSTGRES_USER=user_user
+      - POSTGRES_PASSWORD=user_pass
+    ports:
+      - "5435:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ./services/user-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_user -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -60,10 +78,14 @@ services:
     volumes:
       - ./kong/kong.yml:/kong/declarative/kong.yml:ro
     depends_on:
-      - user-service
-      - composite-service
-      - activity-service
-      - ai-recommender-composite-service
+      user-service:
+        condition: service_healthy
+      composite-service:
+        condition: service_started
+      activity-service:
+        condition: service_started
+      ai-recommender-composite-service:
+        condition: service_started
 
   # Legacy gateway retained for reference only.
   # It is disabled by default and only starts when profile `legacy-gateway` is enabled.
@@ -87,6 +109,17 @@ services:
   user-service:
     build: ./services/user-service
     container_name: user-service
+    environment:
+      - DATABASE_URL=postgresql://user_user:user_pass@user-db:5432/user_db
+      - SESSION_SECRET=supersecret123
+    depends_on:
+      user-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/profile')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     # expose a port only for debugging; composite and gateway use the internal network
     ports:
       - "8005:8000"
@@ -203,5 +236,6 @@ services:
 volumes:
   menu_db_data:
   foodorder_db_data:
+  user_db_data:
 
 
