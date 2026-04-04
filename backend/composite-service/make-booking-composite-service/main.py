@@ -248,7 +248,7 @@ async def get_booking_availability(
 @app.get("/activities")
 async def get_activities():
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{ACTIVITY_URL}/getAllActivities")
+        res = await client.get(f"{ACTIVITY_URL}/activities")
     return res.json()
 
 @app.get("/activities/category/{category}")

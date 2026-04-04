@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
@@ -15,12 +14,16 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
-app.mount("/images", StaticFiles(directory="images"), name="images")
 
 # Allow frontend later to access this service
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,10 +59,94 @@ def home():
     return {"message": "Activity Service is running"}
 
 # Access using Supabase
-@app.get("/getAllActivities")
+@app.get("/activities")
 def get_activities():
     response = supabase.table("activities").select("*").execute()
-    return {"activities": response.data}
+    return {"activities": response.data or []}
+
+@app.post("/bookings")
+def create_booking(payload: dict):
+    start_time = payload.get("start_time")
+    end_time = payload.get("end_time")
+    activity_id = payload.get("activity_id")
+
+    if not activity_id:
+        raise HTTPException(status_code=400, detail="activity_id is required")
+
+    if start_time and end_time:
+        booked_slots = get_slot_booking_count(start_time, end_time, activity_id)
+        if booked_slots >= MAX_BOOKINGS_PER_SLOT:
+            raise HTTPException(status_code=409, detail="Selected slot is fully booked")
+
+    # Store full booking record: user info, activity, time slot, food orders, payment
+    booking_payload = {
+        "user_name": payload.get("user_name"),
+        "user_email": payload.get("user_email"),
+        "activity_id": payload.get("activity_id"),
+        "activity_name": payload.get("activity_name"),
+        "start_time": payload.get("start_time"),
+        "end_time": payload.get("end_time"),
+        "food_orders": payload.get("food_orders"),     # jsonb: list of ordered items
+        "total_amount": payload.get("total_amount"),
+        "status": payload.get("status", "confirmed"),
+        "payment": payload.get("payment"),             # jsonb: transaction_id, method, status
+        "additional_notes": payload.get("additional_notes", ""),
+    }
+
+    # Keep insertion compatible with older schemas by dropping unknown columns one by one.
+    insert_payload = {k: v for k, v in booking_payload.items() if v is not None}
+    omitted_columns = []
+
+    while True:
+        try:
+            response = supabase.table("bookings").insert(insert_payload).execute()
+            break
+        except APIError as exc:
+            message = str(exc)
+            if "PGRST204" not in message:
+                raise HTTPException(status_code=500, detail=message)
+
+            match = re.search(r"'([^']+)' column", message)
+            if not match:
+                raise HTTPException(status_code=500, detail=message)
+
+            missing_col = match.group(1)
+            if missing_col not in insert_payload:
+                raise HTTPException(status_code=500, detail=message)
+
+            omitted_columns.append(missing_col)
+            insert_payload.pop(missing_col, None)
+
+            if not insert_payload:
+                raise HTTPException(status_code=500, detail="No compatible columns found for bookings table")
+
+    return {
+        "success": True,
+        "booking": response.data[0] if response.data else None,
+        "omitted_columns": omitted_columns,
+    }
+
+
+@app.get("/bookings/availability")
+def get_booking_availability(start_time: str, end_time: str, activity_id: str):
+    booked_slots = get_slot_booking_count(start_time, end_time, activity_id)
+    remaining_slots = max(MAX_BOOKINGS_PER_SLOT - booked_slots, 0)
+
+    return {
+        "activity_id": activity_id,
+        "start_time": start_time,
+        "end_time": end_time,
+        "max_slots": MAX_BOOKINGS_PER_SLOT,
+        "booked_slots": booked_slots,
+        "remaining_slots": remaining_slots,
+        "is_full": remaining_slots == 0,
+    }
+
+
+@app.get("/bookings")
+def list_bookings():
+    response = supabase.table("bookings").select("*").execute()
+    return {"success": True, "bookings": response.data}
 
 
 @app.post("/bookings")
@@ -149,16 +236,15 @@ def list_bookings():
 # Get single activity (details page)
 @app.get("/activities/{activity_id}")
 def get_activity(activity_id: str):
-    response = supabase.table("activities") \
+    res = supabase.table("activities") \
         .select("*") \
         .eq("id", activity_id) \
         .execute()
 
-    if response.data:
-        return response.data[0]
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Activity not found")
 
-    raise HTTPException(status_code=404, detail="Activity not found")
-
+    return res.data[0]
 # Filter by category
 @app.get("/activities/category/{category}")
 def get_by_category(category: str):
