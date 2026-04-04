@@ -18,6 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
+  foodorder-db:
+    image: postgres:16
+    container_name: foodorder-db
+    environment:
+      - POSTGRES_DB=foodorder_db
+      - POSTGRES_USER=foodorder_user
+      - POSTGRES_PASSWORD=foodorder_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - foodorder_db_data:/var/lib/postgresql/data
+      - ./services/foodOrder-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodorder_user -d foodorder_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -173,13 +191,17 @@ services:
       context: ./services/foodOrder-service
       dockerfile: Dockerfile
     container_name: foodorder-service
-    env_file : 
-       - ./services/foodOrder-service/.env
+    environment:
+      - DATABASE_URL=postgresql://foodorder_user:foodorder_pass@foodorder-db:5432/foodorder_db
+    depends_on:
+      foodorder-db:
+        condition: service_healthy
     ports:
      - "8014:8000"
 
 
 volumes:
   menu_db_data:
+  foodorder_db_data:
 
 
