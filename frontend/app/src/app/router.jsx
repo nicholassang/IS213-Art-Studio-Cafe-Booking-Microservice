@@ -11,7 +11,8 @@ import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
 import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
-  
+import BookingPage from "../pages/BookingPage/CalendarBooking.jsx";
+
 // Protected route wrapper
 const Protected = ({ user, children }) => {
   if (!user) return <Navigate to="/login" replace />;
@@ -34,12 +35,14 @@ export const router = (user) =>
       element: <ActivityDetail />,
     },
     // AI quiz
-    { path: "/quiz", 
-      element: <Questionnaire /> 
+    {
+      path: "/quiz",
+      element: <Questionnaire />
     },
     // quiz result
-    { path: "/quiz/result/:submissionId", 
-      element: <Recommendation /> 
+    {
+      path: "/quiz/result/:submissionId",
+      element: <Recommendation />
     },
 
     {
@@ -62,5 +65,9 @@ export const router = (user) =>
       path: "/payment",
       element: <PaymentPage />,
     },
-]);
+    {
+      path: "/booking",
+      element: <BookingPage />,
+    }
+  ]);
 
