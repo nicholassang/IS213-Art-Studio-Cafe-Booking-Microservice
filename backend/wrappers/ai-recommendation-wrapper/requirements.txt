@@ -10,8 +10,5 @@ httpx
 groq
 google-genai
 
-# RabbitMQ
-aio_pika
-
 # Database
 supabase

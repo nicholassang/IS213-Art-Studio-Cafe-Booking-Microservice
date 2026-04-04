@@ -77,8 +77,6 @@ services:
   ai-recommender-composite-service:
     build: ./composite-service/ai-recommender-composite-service
     container_name: ai-recommender-composite-service
-    ports:
-      - "8009:8000"
     depends_on:
       - quiz-service
       - ai-recommendation-wrapper
@@ -86,12 +84,8 @@ services:
   ai-recommendation-wrapper:
     build: ./wrappers/ai-recommendation-wrapper
     container_name: ai-recommendation-wrapper
-    ports:
-      - "8006:8000"
     env_file:
       - ./wrappers/ai-recommendation-wrapper/.env
-    depends_on:
-      - rabbitmq
 
   payment-wrapper:
     build: ./wrappers/payment-wrapper
@@ -99,21 +93,6 @@ services:
     ports:
       - "8007:8000"
 
-  # ai-recommendation-wrapper:
-  #   build: ./wrappers/ai-recommendation-wrapper
-  #   container_name: ai-recommendation-wrapper
-  #   ports:
-  #     - "8006:8000"
-  #   env_file:
-  #     - ./wrappers/ai-recommendation-wrapper/.env
-  # payment-wrapper:
-  #   build: ./wrappers/payment-wrapper
-  #   container_name: payment-wrapper
-  #   ports:
-  #    - "8007:8000"
-  #   env_file:
-  #    - ./wrappers/payment-wrapper/.env
-  #
   notification-service:
     build:
       context: .
@@ -145,10 +124,6 @@ services:
     container_name: quiz-service
     env_file:
       - ./services/quiz-service/.env
-    environment:
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-    ports:
-     - "8012:8000"
 
   menu-service:
     build:
@@ -165,5 +140,3 @@ services:
     container_name: foodorder-service
     ports:
      - "8014:8000"
-
-

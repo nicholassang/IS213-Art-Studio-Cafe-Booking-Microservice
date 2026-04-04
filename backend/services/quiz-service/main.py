@@ -1,59 +1,44 @@
-import os
-import json
 import uuid
 import random
+import os
 import logging
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, field_validator
-from supabase import create_client, Client
 
 from question_bank import QUESTION_BANK
 
-load_dotenv()
-
+# ── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Clients ───────────────────────────────────────────────────────────────
-supabase: Client = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_KEY"],
-)
+# ── Supabase setup ──────────────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# ── In-memory session store ───────────────────────────────────────────────
-# session_id → { "user_id", "questions": [...], "answers": {question_id: text} }
-_sessions: dict[str, dict] = {}
+supabase_client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        from supabase import create_client
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.info("Supabase client initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase client: {e}")
+else:
+    logger.warning("Supabase credentials not configured — quiz service requires Supabase")
 
 CATEGORIES = ["food_and_drink", "activity_preferences", "ambience_and_vibe", "visit_style_and_occasion"]
 QUESTIONS_PER_SECTION = 2
 TOTAL_QUESTIONS = QUESTIONS_PER_SECTION * len(CATEGORIES)  # 8
 
-
-# ── Lifespan ──────────────────────────────────────────────────────────────
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
 app = FastAPI(
     title="Quiz Service",
     description="Serves open-ended quiz questions and collects user answers for AI personality profiling.",
-    version="2.0.0",
-    lifespan=lifespan,
+    version="3.0.0",
 )
 
-
 # ── Schemas ───────────────────────────────────────────────────────────────
-class QuestionOut(BaseModel):
-    question_id: str
-    text: str
-    category: str
-
 class AnswerIn(BaseModel):
     question_id: str
     answer_text: str
@@ -66,11 +51,6 @@ class AnswerIn(BaseModel):
         return v.strip()
 
 
-class AnswerOut(BaseModel):
-    question_id: str
-    answer_text: str
-
-
 class SessionStart(BaseModel):
     user_id: str
 
@@ -78,7 +58,7 @@ class SessionStart(BaseModel):
 class SessionOut(BaseModel):
     session_id: str
     user_id: str
-    questions: list[QuestionOut]
+    questions: list[dict]
     answers: dict[str, str]
 
 
@@ -96,16 +76,39 @@ def _select_questions() -> list[dict]:
     return selected
 
 
-def _get_session_or_404(session_id: str) -> dict:
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    return session
+def _session_from_db(row: dict) -> dict:
+    """Normalize a Supabase row into a session dict."""
+    return {
+        "user_id": row["user_id"],
+        "questions": row["questions"],
+        "answers": row.get("answers") or {},
+    }
+
+
+async def _get_session_or_404(session_id: str) -> dict:
+    """Fetch session directly from Supabase."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    try:
+        result = (
+            supabase_client.table("quiz_sessions")
+            .select("*")
+            .eq("session_id", session_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        return _session_from_db(result.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch session.")
 
 
 # ── Question bank endpoint ───────────────────────────────────────────────
 @app.get("/quiz/questions", tags=["Quiz"])
-def get_all_questions(category: str = None):
+def get_all_questions(category: str | None = None):
     """Return all questions from the question bank, optionally filtered by category."""
     questions = QUESTION_BANK
     if category:
@@ -115,43 +118,55 @@ def get_all_questions(category: str = None):
 
 # ── Session endpoints ─────────────────────────────────────────────────────
 @app.post("/quiz/session", response_model=SessionOut, tags=["Quiz"])
-def start_session(payload: SessionStart):
+async def start_session(payload: SessionStart):
     """Start a new quiz session: randomly select 8 questions (2 per category)."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
     session_id = str(uuid.uuid4())
     questions = _select_questions()
 
-    _sessions[session_id] = {
+    record = {
+        "session_id": session_id,
         "user_id": payload.user_id,
         "questions": questions,
         "answers": {},
+        "status": "active",
         "created_at": _now_iso(),
     }
+
+    try:
+        supabase_client.table("quiz_sessions").insert(record).execute()
+        logger.info(f"Session {session_id} created for user {payload.user_id}")
+    except Exception as e:
+        logger.error(f"Failed to create session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create session.")
 
     return SessionOut(
         session_id=session_id,
         user_id=payload.user_id,
-        questions=[QuestionOut(**q) for q in questions],
+        questions=questions,
         answers={},
     )
 
 
 @app.get("/quiz/session/{session_id}", response_model=SessionOut, tags=["Quiz"])
-def get_session(session_id: str):
+async def get_session(session_id: str):
     """Retrieve a session with its questions and current answers (for state restore)."""
-    session = _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id)
     return SessionOut(
         session_id=session_id,
         user_id=session["user_id"],
-        questions=[QuestionOut(**q) for q in session["questions"]],
+        questions=session["questions"],
         answers=session["answers"],
     )
 
 
 # ── Answer endpoints ──────────────────────────────────────────────────────
 @app.post("/quiz/session/{session_id}/answer", tags=["Quiz"])
-def submit_answer(session_id: str, payload: AnswerIn):
+async def submit_answer(session_id: str, payload: AnswerIn):
     """Submit or overwrite an answer for a question in the session."""
-    session = _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id)
 
     valid_qids = {q["question_id"] for q in session["questions"]}
     if payload.question_id not in valid_qids:
@@ -159,6 +174,15 @@ def submit_answer(session_id: str, payload: AnswerIn):
 
     session["answers"][payload.question_id] = payload.answer_text
     answered_count = len(session["answers"])
+
+    try:
+        supabase_client.table("quiz_sessions").update({
+            "answers": session["answers"],
+            "updated_at": _now_iso(),
+        }).eq("session_id", session_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to update answer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save answer.")
 
     return {
         "session_id": session_id,
@@ -170,9 +194,9 @@ def submit_answer(session_id: str, payload: AnswerIn):
 
 
 @app.put("/quiz/session/{session_id}/answer/{question_id}", tags=["Quiz"])
-def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
+async def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
     """Edit a previously submitted answer (triggered by the edit button in UI)."""
-    session = _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id)
 
     valid_qids = {q["question_id"] for q in session["questions"]}
     if question_id not in valid_qids:
@@ -183,6 +207,15 @@ def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
 
     session["answers"][question_id] = payload.answer_text
 
+    try:
+        supabase_client.table("quiz_sessions").update({
+            "answers": session["answers"],
+            "updated_at": _now_iso(),
+        }).eq("session_id", session_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to edit answer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update answer.")
+
     return {
         "session_id": session_id,
         "question_id": question_id,
@@ -192,9 +225,9 @@ def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
 
 
 @app.get("/quiz/session/{session_id}/progress", tags=["Quiz"])
-def get_progress(session_id: str):
+async def get_progress(session_id: str):
     """Check how many questions have been answered."""
-    session = _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id)
     answered_count = len(session["answers"])
 
     return {
@@ -216,17 +249,23 @@ async def submit_session(session_id: str):
     """
     Finalise a quiz session:
     - Validates all 8 answers are present.
-    - Persists to Supabase (quiz_submissions table).
+    - Marks session as completed in Supabase.
     - Returns the full Q&A payload to the caller (composite) for AI processing.
-    NOTE: No longer publishes to RabbitMQ — the composite orchestrates the next step.
+    NOTE: Storage is handled by the AI recommendation service (quiz_results table).
     """
-    session = _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id)
 
     if len(session["answers"]) < TOTAL_QUESTIONS:
         raise HTTPException(
             status_code=400,
             detail=f"Only {len(session['answers'])}/{TOTAL_QUESTIONS} answers submitted.",
         )
+
+    try:
+        supabase_client.table("quiz_sessions").delete().eq("session_id", session_id).execute()
+        logger.info(f"Session {session_id} deleted after submission")
+    except Exception as e:
+        logger.error(f"Failed to delete session after submit: {e}")
 
     submission_id = str(uuid.uuid4())
     submitted_at = _now_iso()
@@ -241,20 +280,6 @@ async def submit_session(session_id: str):
         for q in session["questions"]
     ]
 
-    record = {
-        "submission_id": submission_id,
-        "user_id": session["user_id"],
-        "answers": answers_list,
-        "submitted_at": submitted_at,
-    }
-
-    result = supabase.table("quiz_submissions").insert(record).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to save submission to Supabase.")
-
-    # Clean up session from memory after successful submission
-    _sessions.pop(session_id, None)
-
     # Return full Q&A payload so the composite can pass it to the AI atomic
     return {
         "submission_id": submission_id,
@@ -264,24 +289,10 @@ async def submit_session(session_id: str):
     }
 
 
-# ── Submission retrieval endpoints ────────────────────────────────────────
-@app.get("/quiz/submissions/{submission_id}", tags=["Quiz"])
-async def get_submission(submission_id: str):
-    """Retrieve a previously submitted quiz session by its submission_id."""
-    result = (
-        supabase.table("quiz_submissions")
-        .select("*")
-        .eq("submission_id", submission_id)
-        .execute()
-    )
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Submission not found.")
-
-    return result.data[0]
-
-
 # ── Health ────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    db_ok = supabase_client is not None
+    if not db_ok:
+        raise HTTPException(status_code=503, detail={"status": "unhealthy", "issues": ["Supabase not configured"]})
+    return {"status": "healthy", "supabase": "connected"}

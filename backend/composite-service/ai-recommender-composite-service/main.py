@@ -28,6 +28,33 @@ AI_URL = "http://ai-recommendation-wrapper:8000"
 PASSTHROUGH_TIMEOUT = 10.0
 
 
+def _build_recommendation_response(ai_data: dict) -> dict:
+    """Reshape raw AI atomic response into the nested recommendation structure."""
+    return {
+        "submission_id": ai_data.get("submission_id", ""),
+        "user_id": ai_data.get("user_id", ""),
+        "submitted_at": ai_data.get("submitted_at"),
+        "recommendation": {
+            "personality_type": ai_data.get("personality_type", ""),
+            "profile_title": ai_data.get("profile_title", ""),
+            "profile_body": ai_data.get("profile_body", ""),
+            "activity_explanations": ai_data.get("activity_explanations", []),
+            "recommendations": ai_data.get("recommendations", []),
+            "food_recommendations": ai_data.get("food_recommendations", []),
+            "food_recommendation_details": ai_data.get("food_recommendation_details", []),
+            "drink_recommendation": ai_data.get("drink_recommendation", ""),
+            "drink_recommendation_details": ai_data.get("drink_recommendation_details", {}),
+            "closing": ai_data.get("closing", ""),
+            "confidence_score": ai_data.get("confidence_score"),
+            "scores": {
+                "solo_social": ai_data.get("solo_social_score", 5),
+                "structured_freeform": ai_data.get("structured_freeform_score", 5),
+                "reasoning": ai_data.get("scoring_reasoning", ""),
+            },
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Quiz passthrough routes
 # (composite exposes these so the frontend only talks to one service)
@@ -76,9 +103,8 @@ async def get_progress(session_id: str):
 
 @app.get("/quiz/questions")
 async def get_questions(category: Optional[str] = None):
-    params = {"category": category} if category else {}
     async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/questions", params=params)
+        res = await client.get(f"{QUIZ_URL}/quiz/questions", params={"category": category})
     return JSONResponse(content=res.json(), status_code=res.status_code)
 
 
@@ -146,29 +172,7 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
     )
 
     # Step 3: Return combined result to client
-    return {
-        "submission_id": quiz_data["submission_id"],
-        "user_id": quiz_data["user_id"],
-        "submitted_at": quiz_data["submitted_at"],
-        "recommendation": {
-            "personality_type": ai_data["personality_type"],
-            "profile_title": ai_data["profile_title"],
-            "profile_body": ai_data["profile_body"],
-            "activity_explanations": ai_data["activity_explanations"],
-            "recommendations": ai_data["recommendations"],
-            "food_recommendations": ai_data["food_recommendations"],
-            "food_recommendation_details": ai_data["food_recommendation_details"],
-            "drink_recommendation": ai_data["drink_recommendation"],
-            "drink_recommendation_details": ai_data["drink_recommendation_details"],
-            "closing": ai_data["closing"],
-            "confidence_score": ai_data["confidence_score"],
-            "scores": {
-                "solo_social": ai_data["solo_social_score"],
-                "structured_freeform": ai_data["structured_freeform_score"],
-                "reasoning": ai_data["scoring_reasoning"],
-            },
-        },
-    }
+    return _build_recommendation_response(ai_data)
 
 
 # ---------------------------------------------------------------------------
@@ -178,65 +182,19 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
 
 @app.get("/quiz/submissions/{submission_id}")
 async def get_submission(submission_id: str):
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        sub_res = await client.get(f"{QUIZ_URL}/quiz/submissions/{submission_id}")
-        if sub_res.status_code != 200:
-            raise HTTPException(status_code=sub_res.status_code, detail=sub_res.text)
-        submission = sub_res.json()
-
-    # Fetch stored AI results from AI atomic and merge
-    # FIX: catch and log specific exception types so real bugs aren't silently swallowed
+    """Fetch stored AI results (quiz_results table) directly from the AI atomic."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
             ai_res = await client.get(f"{AI_URL}/quiz/results/{submission_id}")
-            if ai_res.status_code == 200:
-                ai_data = ai_res.json()
-
-                solo_score = ai_data.get("solo_social_score", 5)
-                structured_score = ai_data.get("structured_freeform_score", 5)
-                recommendations = ai_data.get("recommendations", [])
-
-                if ai_data.get("confidence_score"):
-                    confidence = ai_data["confidence_score"]
-                else:
-                    # Fallback — matches the atomic service formula
-                    solo_deviation = abs(solo_score - 5) / 5.0
-                    structured_deviation = abs(structured_score - 5) / 5.0
-                    score_confidence = ((solo_deviation + structured_deviation) / 2) * 0.20
-                    confidence = round(0.40 + score_confidence, 2)
-
-                submission["recommendation"] = {
-                    "personality_type": ai_data.get("personality_type", ""),
-                    "profile_title": ai_data.get("profile_title", ""),
-                    "profile_body": ai_data.get("profile_body", ""),
-                    "activity_explanations": ai_data.get("activity_explanations", []),
-                    "recommendations": ai_data.get("recommendations", []),
-                    "food_recommendations": ai_data.get("food_recommendations", []),
-                    "food_recommendation_details": ai_data.get("food_recommendation_details", []),
-                    "drink_recommendation": ai_data.get("drink_recommendation", ""),
-                    "drink_recommendation_details": ai_data.get("drink_recommendation_details", {}),
-                    "closing": ai_data.get("closing", ""),
-                    "confidence_score": confidence,
-                    "scores": {
-                        "solo_social": solo_score,
-                        "structured_freeform": structured_score,
-                        "reasoning": ai_data.get("scoring_reasoning", ""),
-                    },
-                }
-            elif ai_res.status_code == 404:
-                logger.info(f"No AI results stored yet for {submission_id}")
-            else:
-                logger.warning(
-                    f"AI atomic returned {ai_res.status_code} for {submission_id}: {ai_res.text}"
-                )
+            if ai_res.status_code != 200:
+                raise HTTPException(status_code=ai_res.status_code, detail=ai_res.text)
+            ai_data = ai_res.json()
     except httpx.TimeoutException:
-        logger.warning(f"Timed out fetching AI results for {submission_id}")
+        raise HTTPException(status_code=504, detail="Timed out fetching AI results")
     except httpx.RequestError as exc:
-        logger.warning(f"Network error fetching AI results for {submission_id}: {exc}")
-    except (KeyError, ValueError) as exc:
-        logger.error(f"Malformed AI response for {submission_id}: {exc}")
+        raise HTTPException(status_code=502, detail=f"Network error: {exc}")
 
-    return submission
+    return _build_recommendation_response(ai_data)
 
 
 @app.get("/quiz/results/{submission_id}")

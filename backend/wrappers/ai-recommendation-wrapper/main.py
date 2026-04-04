@@ -1,12 +1,7 @@
 import json
 import logging
 import re
-import uuid
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Optional
 
-import httpx
 from fastapi import FastAPI, HTTPException
 from groq import AsyncGroq
 from google import genai
@@ -56,18 +51,12 @@ if settings.gemini_api_key:
 
 
 # ---------------------------------------------------------------------------
-# Lifespan
+# App
 # ---------------------------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
 app = FastAPI(
     title="AI Recommendation Service",
     description="Receives Q&A from composite, scores and profiles the user, returns recommendations.",
     version="2.0.0",
-    lifespan=lifespan,
 )
 
 
@@ -85,7 +74,7 @@ class RecommendRequest(BaseModel):
     submission_id: str
     user_id: str
     answers: list[QuizAnswer] = Field(..., min_length=1)
-    submitted_at: Optional[str] = None
+    submitted_at: str | None = None
     is_authenticated: bool = True
 
 
@@ -236,9 +225,9 @@ async def generate_profile(
     answers: list[QuizAnswer],
     scores: ScoringResult,
     personality_type: str,
-    disliked_activities: Optional[list[str]] = None,
-    disliked_food: Optional[list[str]] = None,
-    disliked_drinks: Optional[list[str]] = None,
+    disliked_activities: list[str] | None = None,
+    disliked_food: list[str] | None = None,
+    disliked_drinks: list[str] | None = None,
 ) -> ProfileResult:
     if disliked_activities is None:
         disliked_activities = []
@@ -389,19 +378,7 @@ async def recommend(request: RecommendRequest):
             f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
         )
 
-        profile = await generate_profile(request.answers, scores, personality_type)
-        recommendations = _extract_recommendations(profile)
-        food_recommendations = _extract_food_recommendations(profile)
-        drink_recommendation = profile.drink_recommendation.get("drink", "")
-
-        logger.info(
-            f"Profile generated: {profile.profile_title} | "
-            f"Activities: {recommendations} | "
-            f"Food: {food_recommendations} | "
-            f"Drink: {drink_recommendation}"
-        )
-
-        # FIX: compute confidence once and pass it through
+        # FIX: compute confidence once, check before expensive profile generation
         confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
 
         # When confidence is below 50 %, answers were too brief to categorise or recommend.
@@ -428,7 +405,6 @@ async def recommend(request: RecommendRequest):
                 "confidence_score": confidence,
             }
 
-            # Only store results for authenticated users
             if request.is_authenticated:
                 await store_result(
                     request.submission_id,
@@ -455,6 +431,7 @@ async def recommend(request: RecommendRequest):
 
             return low_conf_result
 
+        # Confidence passed — generate the full profile
         profile = await generate_profile(request.answers, scores, personality_type)
         recommendations = _extract_recommendations(profile)
         food_recommendations = _extract_food_recommendations(profile)
@@ -467,7 +444,6 @@ async def recommend(request: RecommendRequest):
             f"Drink: {drink_recommendation}"
         )
 
-        # Only store results for authenticated users
         if request.is_authenticated:
             await store_result(
                 request.submission_id,
