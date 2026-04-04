@@ -327,7 +327,7 @@ export default function ActivityList() {
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "flex-start",
+                alignItems: "center",
                 gap: "16px",
                 flexWrap: "wrap",
                 marginBottom: "24px",
@@ -342,22 +342,40 @@ export default function ActivityList() {
                 </p>
               </div>
 
-              <button
-                onClick={() => navigate("/saved-experiences")}
-                style={{
-                  padding: "12px 18px",
-                  borderRadius: "999px",
-                  border: "1px solid #e6ddd1",
-                  background: "#fffdf9",
-                  color: "#241c17",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                ❤️ Saved Experiences
-              </button>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => navigate("/")}
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: "999px",
+                    border: "1px solid #e6ddd1",
+                    background: "#fffaf4",
+                    color: "#241c17",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
+                  ⌂ Home
+                </button>
+
+                <button
+                  onClick={() => navigate("/saved-experiences")}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "999px",
+                    border: "1px solid #e6ddd1",
+                    background: "#fffdf9",
+                    color: "#241c17",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontFamily: "'DM Sans', sans-serif",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ❤️ Saved Experiences
+                </button>
+              </div>
             </div>
 
             <div className="list-search-wrap">
@@ -423,8 +441,8 @@ export default function ActivityList() {
               ))
             )}
           </div>
-        </div>
-      </Layout>
+        </div >
+      </Layout >
     </>
   );
 }
