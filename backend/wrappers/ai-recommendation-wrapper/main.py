@@ -48,6 +48,29 @@ if settings.gemini_api_key:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _require_supabase():
+    """Raise 503 if Supabase is not configured."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+
+def _supabase_fetch(description: str, query, allow_empty: bool = False):
+    """Execute a Supabase query with standardized error handling."""
+    try:
+        result = query.execute()
+        if not result.data and not allow_empty:
+            raise HTTPException(status_code=404, detail="Results not found")
+        return result.data or []
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to {description}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(
@@ -205,6 +228,60 @@ def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
     ]
 
 
+def _build_response(
+    submission_id: str,
+    personality_type: str,
+    scores: ScoringResult | dict,
+    profile: ProfileResult | dict,
+    recommendations: list[str],
+    food_recommendations: list[str],
+    food_recommendation_details: list[dict],
+    drink_recommendation: str,
+    drink_recommendation_details: dict,
+    confidence: float,
+) -> dict:
+    """Build standardized recommendation response dict."""
+    if isinstance(scores, dict):
+        solo_score = scores.get("solo_social_score", 0)
+        structured_score = scores.get("structured_freeform_score", 0)
+        reasoning = scores.get("scoring_reasoning", "")
+    else:
+        solo_score = scores.solo_social_score
+        structured_score = scores.structured_freeform_score
+        reasoning = scores.reasoning
+
+    if isinstance(profile, dict):
+        profile_title = profile.get("profile_title", "")
+        profile_body = profile.get("profile_body", "")
+        activity_explanations = profile.get("activity_explanations", [])
+        closing = profile.get("closing", "")
+    else:
+        profile_title = profile.profile_title
+        profile_body = profile.profile_body
+        activity_explanations = profile.activity_explanations
+        closing = profile.closing
+
+    return {
+        "submission_id": submission_id,
+        "personality_type": personality_type,
+        "scores": {
+            "solo_social": solo_score,
+            "structured_freeform": structured_score,
+            "reasoning": reasoning,
+        },
+        "profile_title": profile_title,
+        "profile_body": profile_body,
+        "recommendations": recommendations,
+        "activity_explanations": activity_explanations,
+        "food_recommendations": food_recommendations,
+        "food_recommendation_details": food_recommendation_details,
+        "drink_recommendation": drink_recommendation,
+        "drink_recommendation_details": drink_recommendation_details,
+        "closing": closing,
+        "confidence_score": confidence,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Call 1 — Scoring (temperature: 0)
 # ---------------------------------------------------------------------------
@@ -232,12 +309,9 @@ async def generate_profile(
     disliked_food: list[str] | None = None,
     disliked_drinks: list[str] | None = None,
 ) -> ProfileResult:
-    if disliked_activities is None:
-        disliked_activities = []
-    if disliked_food is None:
-        disliked_food = []
-    if disliked_drinks is None:
-        disliked_drinks = []
+    disliked_activities = disliked_activities or []
+    disliked_food = disliked_food or []
+    disliked_drinks = disliked_drinks or []
 
     user_prompt = (
         "Customer's Quiz Responses:\n\n"
@@ -315,16 +389,14 @@ async def store_result(
             logger.warning(f"Supabase returned empty for {submission_id}")
     except Exception as e:
         logger.error(f"Failed to store result for {submission_id}: {e}")
+        # Fallback: store minimal record if full storage fails
+        minimal_fields = [
+            "submission_id", "user_id", "answers",
+            "solo_social_score", "structured_freeform_score",
+            "personality_type", "recommendations",
+        ]
+        minimal_record = {k: record[k] for k in minimal_fields if k in record}
         try:
-            minimal_record = {
-                "submission_id": submission_id,
-                "user_id": user_id,
-                "answers": [a.model_dump() for a in answers],
-                "solo_social_score": scores.solo_social_score,
-                "structured_freeform_score": scores.structured_freeform_score,
-                "personality_type": personality_type,
-                "recommendations": recommendations,
-            }
             supabase_client.table("quiz_results").insert(minimal_record).execute()
             logger.info(f"Stored minimal result for {submission_id}")
         except Exception as e2:
@@ -356,23 +428,18 @@ async def recommend(request: RecommendRequest):
                     f"Result already exists for {request.submission_id}, returning stored result"
                 )
                 stored = existing.data[0]
-                return {
-                    "submission_id": stored["submission_id"],
-                    "personality_type": stored["personality_type"],
-                    "solo_social_score": stored["solo_social_score"],
-                    "structured_freeform_score": stored["structured_freeform_score"],
-                    "scoring_reasoning": stored["scoring_reasoning"],
-                    "profile_title": stored["profile_title"],
-                    "profile_body": stored["profile_body"],
-                    "recommendations": stored["recommendations"],
-                    "activity_explanations": stored["activity_explanations"],
-                    "food_recommendations": stored.get("food_recommendations", []),
-                    "food_recommendation_details": stored.get("food_recommendation_details", []),
-                    "drink_recommendation": stored.get("drink_recommendation", ""),
-                    "drink_recommendation_details": stored.get("drink_recommendation_details", {}),
-                    "closing": stored["closing"],
-                    "confidence_score": stored["confidence_score"],
-                }
+                return _build_response(
+                    submission_id=stored["submission_id"],
+                    personality_type=stored["personality_type"],
+                    scores=stored,
+                    profile=stored,
+                    recommendations=stored["recommendations"],
+                    food_recommendations=stored.get("food_recommendations", []),
+                    food_recommendation_details=stored.get("food_recommendation_details", []),
+                    drink_recommendation=stored.get("drink_recommendation", ""),
+                    drink_recommendation_details=stored.get("drink_recommendation_details", {}),
+                    confidence=stored["confidence_score"],
+                )
         except Exception as e:
             logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
 
@@ -389,27 +456,18 @@ async def recommend(request: RecommendRequest):
 
         # When confidence is below 50 %, answers were too brief to categorise or recommend.
         if confidence < 0.50:
-            low_conf_result = {
-                "submission_id": request.submission_id,
-                "personality_type": "Unknown",
-                "solo_social_score": scores.solo_social_score,
-                "structured_freeform_score": scores.structured_freeform_score,
-                "scoring_reasoning": scores.reasoning,
-                "profile_title": "We'd love to know you better",
-                "profile_body": (
+            low_conf_profile = ProfileResult(
+                profile_title="We'd love to know you better",
+                profile_body=(
                     "Your answers were a bit too brief for us to build a meaningful personality profile. "
                     "We didn't want to guess — your creative preferences deserve more than a wild stab in the dark. "
                     "Try retaking the quiz with a few more details about what you enjoy, and we'll have a much clearer picture next time."
                 ),
-                "recommendations": [],
-                "activity_explanations": [],
-                "food_recommendations": [],
-                "food_recommendation_details": [],
-                "drink_recommendation": "",
-                "drink_recommendation_details": {},
-                "closing": "Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
-                "confidence_score": confidence,
-            }
+                activity_explanations=[],
+                food_recommendations=[],
+                drink_recommendation={"drink": "", "explanation": ""},
+                closing="Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
+            )
 
             if request.is_authenticated:
                 await store_result(
@@ -417,25 +475,29 @@ async def recommend(request: RecommendRequest):
                     request.user_id,
                     request.answers,
                     scores,
-                    low_conf_result["personality_type"],
+                    "Unknown",
                     [],
                     [],
                     [],
                     "",
                     {},
-                    ProfileResult(
-                        profile_title=low_conf_result["profile_title"],
-                        profile_body=low_conf_result["profile_body"],
-                        activity_explanations=[],
-                        food_recommendations=[],
-                        drink_recommendation={"drink": "", "explanation": ""},
-                        closing=low_conf_result["closing"],
-                    ),
+                    low_conf_profile,
                     confidence,
                     request.submitted_at,
                 )
 
-            return low_conf_result
+            return _build_response(
+                submission_id=request.submission_id,
+                personality_type="Unknown",
+                scores=scores,
+                profile=low_conf_profile,
+                recommendations=[],
+                food_recommendations=[],
+                food_recommendation_details=[],
+                drink_recommendation="",
+                drink_recommendation_details={},
+                confidence=confidence,
+            )
 
         # Confidence passed — generate the full profile
         profile = await generate_profile(
@@ -474,23 +536,18 @@ async def recommend(request: RecommendRequest):
                 request.submitted_at,
             )
 
-        return {
-            "submission_id": request.submission_id,
-            "personality_type": personality_type,
-            "solo_social_score": scores.solo_social_score,
-            "structured_freeform_score": scores.structured_freeform_score,
-            "scoring_reasoning": scores.reasoning,
-            "profile_title": profile.profile_title,
-            "profile_body": profile.profile_body,
-            "recommendations": recommendations,
-            "activity_explanations": profile.activity_explanations,
-            "food_recommendations": food_recommendations,
-            "food_recommendation_details": profile.food_recommendations,
-            "drink_recommendation": drink_recommendation,
-            "drink_recommendation_details": profile.drink_recommendation,
-            "closing": profile.closing,
-            "confidence_score": confidence,
-        }
+        return _build_response(
+            submission_id=request.submission_id,
+            personality_type=personality_type,
+            scores=scores,
+            profile=profile,
+            recommendations=recommendations,
+            food_recommendations=food_recommendations,
+            food_recommendation_details=profile.food_recommendations,
+            drink_recommendation=drink_recommendation,
+            drink_recommendation_details=profile.drink_recommendation,
+            confidence=confidence,
+        )
 
     except Exception as e:
         logger.error(f"Failed to generate recommendation for {request.submission_id}: {e}")
@@ -503,42 +560,27 @@ async def recommend(request: RecommendRequest):
 @app.get("/quiz/results/{submission_id}")
 async def get_quiz_results(submission_id: str):
     """Fetch AI-generated results for a submission from Supabase."""
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
-    try:
-        result = (
-            supabase_client.table("quiz_results")
-            .select("*")
-            .eq("submission_id", submission_id)
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Results not found")
-        return result.data[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to fetch results for {submission_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    _require_supabase()
+    result = _supabase_fetch(
+        f"fetch results for {submission_id}",
+        supabase_client.table("quiz_results").select("*").eq("submission_id", submission_id),
+    )
+    return result[0]
 
 
 @app.get("/quiz/user-results")
 async def get_user_results(user_id: str):
     """Fetch all AI-generated results for a given user from Supabase."""
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
-    try:
-        result = (
-            supabase_client.table("quiz_results")
-            .select("submission_id, personality_type, confidence_score, submitted_at")
-            .eq("user_id", user_id)
-            .order("submission_id", desc=True)
-            .execute()
-        )
-        return {"results": result.data or []}
-    except Exception as e:
-        logger.error(f"Failed to fetch results for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    _require_supabase()
+    result = _supabase_fetch(
+        f"fetch results for user {user_id}",
+        supabase_client.table("quiz_results")
+        .select("submission_id, personality_type, confidence_score, submitted_at")
+        .eq("user_id", user_id)
+        .order("submission_id", desc=True),
+        allow_empty=True,
+    )
+    return {"results": result}
 
 
 # ---------------------------------------------------------------------------

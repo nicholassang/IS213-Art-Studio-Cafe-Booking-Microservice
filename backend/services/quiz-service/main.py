@@ -67,6 +67,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _require_supabase():
+    """Raise 503 if Supabase is not configured."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+
+async def _save_answers(session_id: str, answers: dict[str, str]) -> None:
+    """Persist answers to Supabase with timestamp."""
+    try:
+        supabase_client.table("quiz_sessions").update({
+            "answers": answers,
+            "updated_at": _now_iso(),
+        }).eq("session_id", session_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to save answers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save answer.")
+
+
 def _select_questions() -> list[dict]:
     """Randomly select 2 questions from each of the 4 categories (8 total)."""
     selected = []
@@ -87,8 +105,7 @@ def _session_from_db(row: dict) -> dict:
 
 async def _get_session_or_404(session_id: str) -> dict:
     """Fetch session directly from Supabase."""
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
+    _require_supabase()
     try:
         result = (
             supabase_client.table("quiz_sessions")
@@ -120,8 +137,7 @@ def get_all_questions(category: str | None = None):
 @app.post("/quiz/session", response_model=SessionOut, tags=["Quiz"])
 async def start_session(payload: SessionStart):
     """Start a new quiz session: randomly select 8 questions (2 per category)."""
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
+    _require_supabase()
 
     session_id = str(uuid.uuid4())
     questions = _select_questions()
@@ -173,16 +189,8 @@ async def submit_answer(session_id: str, payload: AnswerIn):
         raise HTTPException(status_code=400, detail=f"Question '{payload.question_id}' not in this session.")
 
     session["answers"][payload.question_id] = payload.answer_text
+    await _save_answers(session_id, session["answers"])
     answered_count = len(session["answers"])
-
-    try:
-        supabase_client.table("quiz_sessions").update({
-            "answers": session["answers"],
-            "updated_at": _now_iso(),
-        }).eq("session_id", session_id).execute()
-    except Exception as e:
-        logger.error(f"Failed to update answer: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save answer.")
 
     return {
         "session_id": session_id,
@@ -206,15 +214,7 @@ async def edit_answer(session_id: str, question_id: str, payload: AnswerIn):
         raise HTTPException(status_code=400, detail=f"No existing answer for '{question_id}' to edit.")
 
     session["answers"][question_id] = payload.answer_text
-
-    try:
-        supabase_client.table("quiz_sessions").update({
-            "answers": session["answers"],
-            "updated_at": _now_iso(),
-        }).eq("session_id", session_id).execute()
-    except Exception as e:
-        logger.error(f"Failed to edit answer: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update answer.")
+    await _save_answers(session_id, session["answers"])
 
     return {
         "session_id": session_id,

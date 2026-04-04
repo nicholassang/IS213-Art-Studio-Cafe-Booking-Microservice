@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { API_GATEWAY, getOrCreateUserId } from "../../constants";
+import { API_GATEWAY } from "../../constants";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -257,10 +257,31 @@ const styles = `
     animation: past-spin 1.5s linear infinite reverse;
   }
   @keyframes past-spin { to { transform: rotate(360deg); } }
-  .past-loading-text {
+  .past-loading-text, .past-loading-title {
     font-size: 0.95rem;
     color: #7c6f5e;
     font-weight: 500;
+  }
+  .past-loading-title {
+    font-size: 1.1rem;
+    color: #5a4e3f;
+    font-weight: 600;
+  }
+  .past-login-btn {
+    margin-top: 16px;
+    padding: 10px 28px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #c9a87c, #a8895c);
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  .past-login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(201,168,124,0.4);
   }
 
   /* ── Error ── */
@@ -307,10 +328,14 @@ export default function PastRecommendations() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     const fetchResults = async () => {
       try {
-        // Use username when logged in, fallback to localStorage guest ID
-        const userId = user ? user.username : getOrCreateUserId();
+        const userId = user.username;
         console.log("[PastRec] user_id:", userId);
 
         if (!userId) {
@@ -381,6 +406,23 @@ export default function PastRecommendations() {
   return (
     <>
       <style>{styles}</style>
+      {!user ? (
+        <div className="past-root">
+          <div className="past-content">
+            <div className="past-header">
+              <span className="past-header-brand">Café de <span>Paris</span></span>
+              <button className="past-header-back" onClick={() => navigate("/")}>← Back</button>
+            </div>
+            <div className="past-loading">
+              <div className="past-loader-ring" />
+              <p className="past-loading-title">Please log in to view past recommendations.</p>
+              <button className="past-login-btn" onClick={() => navigate("/login")}>
+                Go to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="past-root">
         <div className="past-header">
           <span className="past-header-brand">Café de <span>Paris</span></span>
@@ -449,6 +491,7 @@ export default function PastRecommendations() {
           )}
         </div>
       </div>
+      )}
     </>
   );
 }

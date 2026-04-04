@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_GATEWAY } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 20; // 60 seconds max
@@ -621,6 +622,7 @@ const styles = `
 export default function ResultPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -651,11 +653,23 @@ export default function ResultPage() {
         return;
       }
 
+      // sessionStorage has no data — this means either:
+      // 1. User refreshed/navigated away and lost the cache
+      // 2. This was an unauthenticated session (results not stored in Supabase)
+      // Since unauthenticated results are never stored server-side, stop polling immediately.
       try {
         const res = await fetch(`${API_GATEWAY}/quiz/submissions/${submissionId}`);
 
+        // Result not found — unauthenticated users never have server-side results
+        if (res.status === 404) {
+          clearInterval(intervalId);
+          setError("This result is no longer available. Unauthenticated quiz results aren't saved — try retaking the quiz to get a fresh recommendation!");
+          setLoading(false);
+          return;
+        }
+
         // Still processing — AI recommendation not ready yet
-        if (res.status === 404 || res.status === 202) {
+        if (res.status === 202) {
           polls++;
           if (polls >= MAX_POLLS) {
             clearInterval(intervalId);
@@ -885,9 +899,11 @@ export default function ResultPage() {
               <button className="result-retake-btn" onClick={handleRetake}>
                 Retake the Quiz
               </button>
-              <button className="result-view-past-btn" onClick={() => navigate("/my-recommendations")}>
-                View Past Recommendations
-              </button>
+              {user && (
+                <button className="result-view-past-btn" onClick={() => navigate("/my-recommendations")}>
+                  View Past Recommendations
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -63,6 +63,19 @@ const styles = `
     50% { transform: scale(1.15); opacity: 0; }
   }
 
+  /* ── Overlay (click outside to close) ── */
+  .chat-popup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 9997;
+    animation: overlay-fade-in 0.3s ease;
+  }
+  @keyframes overlay-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
   /* ── Chat popup ── */
   .chat-popup {
     position: fixed;
@@ -821,10 +834,10 @@ export default function ChatWidget() {
       // Cache the recommendation so the ResultPage can use it immediately.
       // For unauthenticated users the result is NOT in Supabase, so polling
       // would timeout — sessionStorage is the fallback.
-      if (data.recommendation) {
+      if (data.submission_id) {
         sessionStorage.setItem(
           `quiz_result_${data.submission_id}`,
-          JSON.stringify(data.recommendation)
+          JSON.stringify(data)
         );
       }
 
@@ -864,7 +877,9 @@ export default function ChatWidget() {
 
       {/* Popup */}
       {isOpen && (
-        <div className="chat-popup">
+        <>
+          <div className="chat-popup-overlay" onClick={() => setIsOpen(false)} />
+          <div className="chat-popup">
           {/* Header */}
           <div className="chat-popup-header">
             <span className="chat-popup-brand">Café de <span>Paris</span></span>
@@ -985,6 +1000,7 @@ export default function ChatWidget() {
             </div>
           )}
         </div>
+        </>
       )}
     </>
   );

@@ -30,31 +30,38 @@ MAKE_BOOKING_URL = os.getenv("MAKE_BOOKING_URL", "http://composite-service:8000"
 PASSTHROUGH_TIMEOUT = 10.0
 
 
-def _build_recommendation_response(ai_data: dict) -> dict:
-    """Reshape raw AI atomic response into the nested recommendation structure."""
-    return {
-        "submission_id": ai_data.get("submission_id", ""),
-        "user_id": ai_data.get("user_id", ""),
-        "submitted_at": ai_data.get("submitted_at"),
-        "recommendation": {
-            "personality_type": ai_data.get("personality_type", ""),
-            "profile_title": ai_data.get("profile_title", ""),
-            "profile_body": ai_data.get("profile_body", ""),
-            "activity_explanations": ai_data.get("activity_explanations", []),
-            "recommendations": ai_data.get("recommendations", []),
-            "food_recommendations": ai_data.get("food_recommendations", []),
-            "food_recommendation_details": ai_data.get("food_recommendation_details", []),
-            "drink_recommendation": ai_data.get("drink_recommendation", ""),
-            "drink_recommendation_details": ai_data.get("drink_recommendation_details", {}),
-            "closing": ai_data.get("closing", ""),
-            "confidence_score": ai_data.get("confidence_score"),
-            "scores": {
-                "solo_social": ai_data.get("solo_social_score", 5),
-                "structured_freeform": ai_data.get("structured_freeform_score", 5),
-                "reasoning": ai_data.get("scoring_reasoning", ""),
-            },
-        },
-    }
+# ---------------------------------------------------------------------------
+# HTTP helpers — centralize client creation and error handling
+# ---------------------------------------------------------------------------
+
+async def _quiz_passthrough(method: str, path: str, **kwargs) -> JSONResponse:
+    """Generic passthrough to quiz service."""
+    res = await _http(method, f"{QUIZ_URL}{path}", timeout=PASSTHROUGH_TIMEOUT, **kwargs)
+    return JSONResponse(content=res.json(), status_code=res.status_code)
+
+
+async def _ai_get(path: str) -> dict:
+    """GET from AI atomic with standardized error handling."""
+    try:
+        res = await _http("GET", f"{AI_URL}{path}", timeout=PASSTHROUGH_TIMEOUT)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timed out fetching AI results")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Network error: {exc}")
+
+
+async def _http(method: str, url: str, timeout: float = 10.0, **kwargs):
+    """Generic HTTP request with configurable timeout."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        return await client.request(method, url, **kwargs)
+
+
+def _json_field(resp, key: str, default=None):
+    """Safely extract a field from a JSON response, returning default on non-200."""
+    return resp.json().get(key, default) if resp.status_code == 200 else default
 
 
 # ---------------------------------------------------------------------------
@@ -64,64 +71,40 @@ def _build_recommendation_response(ai_data: dict) -> dict:
 
 @app.post("/quiz/session")
 async def start_session(request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.post(f"{QUIZ_URL}/quiz/session", json=body)
-    # FIX: propagate the downstream status code instead of always returning 200
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("POST", "/quiz/session", json=await request.json())
 
 
 @app.get("/quiz/session/{session_id}")
 async def get_session(session_id: str):
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}")
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("GET", f"/quiz/session/{session_id}")
 
 
 @app.post("/quiz/session/{session_id}/answer")
 async def submit_answer(session_id: str, request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/answer", json=body)
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("POST", f"/quiz/session/{session_id}/answer", json=await request.json())
 
 
 @app.put("/quiz/session/{session_id}/answer/{question_id}")
 async def edit_answer(session_id: str, question_id: str, request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.put(
-            f"{QUIZ_URL}/quiz/session/{session_id}/answer/{question_id}", json=body
-        )
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("PUT", f"/quiz/session/{session_id}/answer/{question_id}", json=await request.json())
 
 
 @app.get("/quiz/session/{session_id}/progress")
 async def get_progress(session_id: str):
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/session/{session_id}/progress")
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("GET", f"/quiz/session/{session_id}/progress")
 
 
 @app.get("/quiz/questions")
 async def get_questions(category: Optional[str] = None):
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.get(f"{QUIZ_URL}/quiz/questions", params={"category": category})
-    return JSONResponse(content=res.json(), status_code=res.status_code)
-
-
-@app.get("/quiz/user-results")
-async def get_user_results(user_id: str):
-    async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-        res = await client.get(f"{AI_URL}/quiz/user-results", params={"user_id": user_id})
-    return JSONResponse(content=res.json(), status_code=res.status_code)
+    return await _quiz_passthrough("GET", "/quiz/questions", params={"category": category})
 
 
 # ---------------------------------------------------------------------------
 # Core orchestration route
 # Step 1: Tell quiz atomic to submit the session → get back Q&A
-# Step 2: Pass Q&A to AI atomic → get back recommendation
-# Step 3: Return full result to client
+# Step 2: Fetch catalog data from make-booking composite
+# Step 3: Pass Q&A + catalog data to AI atomic → get back recommendation
+# Step 4: Return full result to client
 # ---------------------------------------------------------------------------
 
 @app.post("/quiz/session/{session_id}/submit")
@@ -129,14 +112,13 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
     """
     Orchestrates the full flow:
     1. Submits the quiz session to the quiz atomic → receives Q&A payload
-    2. Passes Q&A payload to the AI atomic → receives recommendation
-    3. Returns the combined result to the client
+    2. Fetches catalog data from make-booking composite
+    3. Passes Q&A + catalog payload to the AI atomic → receives recommendation
+    4. Returns the combined result to the client
     """
 
     # Step 1: Submit quiz session to quiz atomic, get Q&A back
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        quiz_res = await client.post(f"{QUIZ_URL}/quiz/session/{session_id}/submit")
-
+    quiz_res = await _http("POST", f"{QUIZ_URL}/quiz/session/{session_id}/submit", timeout=30.0)
     if quiz_res.status_code != 201:
         raise HTTPException(
             status_code=quiz_res.status_code,
@@ -151,12 +133,11 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
 
     # Step 2: Fetch activities and menu from make-booking composite
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            activities_resp = await client.get(f"{MAKE_BOOKING_URL}/activities")
-            menu_resp = await client.get(f"{MAKE_BOOKING_URL}/menu")
+        activities_resp = await _http("GET", f"{MAKE_BOOKING_URL}/activities", timeout=10.0)
+        menu_resp = await _http("GET", f"{MAKE_BOOKING_URL}/menu", timeout=10.0)
 
-        activities_data = activities_resp.json().get("activities", []) if activities_resp.status_code == 200 else []
-        menu_data = menu_resp.json().get("menu", []) if menu_resp.status_code == 200 else []
+        activities_data = _json_field(activities_resp, "activities", [])
+        menu_data = _json_field(menu_resp, "menu", [])
 
         activity_names = [a["name"] for a in activities_data if "name" in a]
 
@@ -187,10 +168,7 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
         "food": food_items,
         "drinks": drink_items,
     }
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        ai_res = await client.post(f"{AI_URL}/recommend", json=ai_payload)
-
+    ai_res = await _http("POST", f"{AI_URL}/recommend", json=ai_payload, timeout=60.0)
     if ai_res.status_code != 200:
         raise HTTPException(
             status_code=ai_res.status_code,
@@ -203,42 +181,25 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
         f"personality={ai_data['personality_type']}"
     )
 
-    # Step 3: Return combined result to client
-    return _build_recommendation_response(ai_data)
+    # Step 4: Return combined result to client (AI atomic already returns proper structure)
+    return ai_data
 
 
 # ---------------------------------------------------------------------------
 # Submission retrieval
-# Fetches quiz submission and merges stored AI results
+# Delegates to AI atomic which owns the quiz_results table
 # ---------------------------------------------------------------------------
 
 @app.get("/quiz/submissions/{submission_id}")
 async def get_submission(submission_id: str):
-    """Fetch stored AI results (quiz_results table) directly from the AI atomic."""
-    try:
-        async with httpx.AsyncClient(timeout=PASSTHROUGH_TIMEOUT) as client:
-            ai_res = await client.get(f"{AI_URL}/quiz/results/{submission_id}")
-            if ai_res.status_code != 200:
-                raise HTTPException(status_code=ai_res.status_code, detail=ai_res.text)
-            ai_data = ai_res.json()
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timed out fetching AI results")
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail=f"Network error: {exc}")
-
-    return _build_recommendation_response(ai_data)
+    """Fetch stored AI results directly from the AI atomic (single source of truth)."""
+    return await _ai_get(f"/quiz/results/{submission_id}")
 
 
-@app.get("/quiz/results/{submission_id}")
-async def get_quiz_results(submission_id: str):
-    """Fetch raw AI results for a submission directly from the AI atomic."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.get(f"{AI_URL}/quiz/results/{submission_id}")
-    if res.status_code == 404:
-        raise HTTPException(status_code=404, detail="Results not found")
-    if res.status_code != 200:
-        raise HTTPException(status_code=res.status_code, detail=res.text)
-    return res.json()
+@app.get("/quiz/user-results")
+async def get_user_results(user_id: str):
+    """Fetch all results for a user directly from the AI atomic."""
+    return await _ai_get(f"/quiz/user-results?user_id={user_id}")
 
 
 # ---------------------------------------------------------------------------
