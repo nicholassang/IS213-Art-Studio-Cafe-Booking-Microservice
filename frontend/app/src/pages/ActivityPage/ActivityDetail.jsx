@@ -22,23 +22,50 @@ const styles = `
     color: var(--text);
   }
 
-  .detail-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.86rem;
-    font-weight: 600;
-    color: #6f6558;
-    background: #fffaf4;
-    border: 1px solid var(--line);
-    padding: 10px 16px;
-    border-radius: 999px;
-    cursor: pointer;
-    margin-bottom: 28px;
-    transition: background 0.2s, color 0.2s, transform 0.2s;
-    letter-spacing: 0.02em;
-  }
+  .detail-top-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
 
+.detail-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #6f6558;
+  background: #fffaf4;
+  border: 1px solid var(--line);
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
+  letter-spacing: 0.02em;
+}
+
+.detail-home:hover {
+  background: var(--text);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+  .detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #6f6558;
+  background: #fffaf4;
+  border: 1px solid var(--line);
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
+  letter-spacing: 0.02em;
+}
   .detail-back:hover {
     background: var(--text);
     color: #fff;
@@ -383,7 +410,7 @@ export default function ActivityDetail() {
         console.error("Saved status fetch error:", err);
       });
 
-    Promise.all([fetchActivity, fetchSavedStatus]).catch(() => {});
+    Promise.all([fetchActivity, fetchSavedStatus]).catch(() => { });
   }, [id, userName]);
 
   useEffect(() => {
@@ -465,9 +492,15 @@ export default function ActivityDetail() {
         <div className="detail-root">
           {message && <div className="detail-toast">{message}</div>}
 
-          <button className="detail-back" onClick={() => navigate("/activities")}>
-            ← Back to activities
-          </button>
+          <div className="detail-top-actions">
+            <button className="detail-home" onClick={() => navigate("/")}>
+              ⌂ Home
+            </button>
+
+            <button className="detail-back" onClick={() => navigate("/activities")}>
+              ← Back to activities
+            </button>
+          </div>
 
           <div className="detail-grid">
             <div className="detail-image-wrap">
