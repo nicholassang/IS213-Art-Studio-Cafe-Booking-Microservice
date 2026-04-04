@@ -48,6 +48,68 @@ AVAILABLE_DRINKS = [
 
 
 # ---------------------------------------------------------------------------
+# Confidence thresholds — controls which tier a result falls into
+#   retry_below  : confidence below this → ask user to try again
+#   explorer_min : confidence at or above this → Explorer fallback profile
+#   explorer_max : confidence above this → full personalised profile
+# ---------------------------------------------------------------------------
+CONFIDENCE_THRESHOLDS = {
+    "retry_below": 0.45,
+    "explorer_min": 0.45,
+    "explorer_max": 0.55,
+}
+
+
+# ---------------------------------------------------------------------------
+# Popularity rankings — used for crowd-favourite fallback (Explorer tier)
+# Edit order to change what surfaces as "most popular".
+# Top of each list = most popular / highest rated.
+# ---------------------------------------------------------------------------
+POPULARITY_RANKED_ACTIVITIES = [
+    "Art Jamming",
+    "Watercoloring",
+    "Acrylic Painting",
+    "Oil Painting",
+    "Clay Sculpting",
+]
+
+POPULARITY_RANKED_FOOD = [
+    "Chocolate Lava Cake",
+    "Truffle Pasta",
+    "Croissant",
+    "Caesar Salad",
+    "Tiramisu",
+    "Avocado Toast",
+    "Red Velvet Cake",
+    "Beef Lasagne",
+]
+
+POPULARITY_RANKED_DRINKS = [
+    "Iced Latte",
+    "Hot Chocolate",
+    "Mango Smoothie",
+    "Strawberry Lemonade",
+]
+
+
+# ---------------------------------------------------------------------------
+# Explorer archetype — the fallback profile for the 45–55 % confidence band
+# ---------------------------------------------------------------------------
+EXPLORER_ARCHETYPE = {
+    "personality_type": "Explorer",
+    "description": (
+        "The Explorer is someone still discovering what they love. "
+        "They come in with an open mind, no strong pull towards solo or social, "
+        "structured or freeform — just curiosity and a willingness to try anything. "
+        "For them, the visit itself is the experiment."
+    ),
+    "traits": ["open-minded", "curious", "adaptable", "undecided"],
+    "solo_social_centroid": 5,
+    "structured_freeform_centroid": 5,
+}
+
+
+# ---------------------------------------------------------------------------
 # Call 1 — Scoring system prompt (temperature: 0)
 # ---------------------------------------------------------------------------
 SCORING_SYSTEM_PROMPT = """
@@ -141,7 +203,7 @@ def build_profile_system_prompt(
     )
 
     return f"""
-You are a warm, insightful writer for Café De Paris, a creative café experience platform.
+You are a warm, insightful writer for Café de Paris, a creative café experience platform.
 
 Your job is to write a personalised personality profile for a customer based on their quiz responses,
 and recommend activities, food, and drinks that best suit them.
@@ -213,5 +275,114 @@ Respond ONLY with valid JSON in exactly this format, with no preamble or markdow
     "explanation": "<1–2 sentences explaining why this drink suits this specific customer>"
   }},
   "closing": "<1–2 warm closing sentences>"
+}}
+""".strip()
+
+
+# ---------------------------------------------------------------------------
+# Call 2 (Explorer path) — profile prompt for the 45–55 % confidence band
+# Forces the AI to use crowd-favourite items and frame the profile as
+# "openness" rather than a degraded or failed result.
+# ---------------------------------------------------------------------------
+def build_explorer_profile_system_prompt(
+    scores: dict,
+    axis_lean: dict,
+    top_activities: list[str],
+    top_food: list[str],
+    top_drinks: list[str],
+    disliked_activities: list[str] = [],
+    disliked_food: list[str] = [],
+    disliked_drinks: list[str] = [],
+) -> str:
+    available_activities = [a for a in top_activities if a not in disliked_activities]
+    available_food = [f for f in top_food if f not in disliked_food]
+    available_drinks = [d for d in top_drinks if d not in disliked_drinks]
+
+    if axis_lean:
+        lean_hint = (
+            f"There is a slight signal on the {axis_lean['axis']} axis "
+            f"(score: {axis_lean['score']}/10, leaning {axis_lean['direction']}). "
+            "You may subtly reflect this lean in the profile — but do not overcommit to it."
+        )
+    else:
+        lean_hint = (
+            "There is no strong signal on either axis. "
+            "The profile should reflect genuine openness and curiosity, not indecision."
+        )
+
+    return f"""
+You are a warm, insightful writer for Café de Paris, a creative café experience platform.
+
+The customer is still discovering their creative preferences — they are an Explorer.
+{EXPLORER_ARCHETYPE['description']}
+
+{lean_hint}
+
+Their axis scores:
+- Solo↔Social: {scores.get("solo_social_score")}/10 (0 = strongly solo, 10 = strongly social)
+- Structured↔Freeform: {scores.get("structured_freeform_score")}/10 (0 = strongly structured, 10 = strongly freeform)
+
+Since we do not have enough signal to make a fully personalised recommendation, we are surfacing
+our crowd favourites — the most loved experiences and menu items at Café de Paris.
+Frame the activity and food/drink explanations as "what makes these so popular with our guests",
+not as personalised picks for this specific person.
+
+The Explorer is a legitimate archetype — frame the profile with warmth and curiosity,
+not as a consolation or a fallback. This person is at the start of something, not stuck.
+
+You MUST choose exactly 3 activities from the activities list, 2 food items from the food list,
+and 1 drink from the drinks list. Do not recommend anything not on these lists.
+
+Activities: {available_activities}
+Food: {available_food}
+Drinks: {available_drinks}
+
+INSTRUCTIONS:
+- Write in second person ("You are...", "You come in...", "You'd love...")
+- The profile_body should celebrate openness and curiosity (3–4 sentences)
+- Each activity explanation should explain why guests consistently love it (2–3 sentences)
+- Food and drink explanations: 1–2 sentences on why each is a crowd favourite
+- The closing should be inviting and optimistic — "sometimes the best discoveries are unexpected"
+- Do not mention scores, axes, or technical scoring language
+- Do not mention that this is a fallback, default, or low-confidence result
+
+Respond ONLY with valid JSON in exactly this format, with no preamble or markdown:
+{{
+  "profile_title": "The Explorer",
+  "profile_body": "<3–4 sentence description celebrating openness and curiosity>",
+  "activity_explanations": [
+    {{
+      "rank": 1,
+      "activity": "<activity name exactly as written in the list above>",
+      "explanation": "<2–3 sentences on why this activity is loved by our guests>"
+    }},
+    {{
+      "rank": 2,
+      "activity": "<activity name exactly as written in the list above>",
+      "explanation": "<2–3 sentences on why this activity is loved by our guests>"
+    }},
+    {{
+      "rank": 3,
+      "activity": "<activity name exactly as written in the list above>",
+      "explanation": "<2–3 sentences on why this activity is loved by our guests>"
+    }}
+  ],
+  "food_recommendations": [
+    {{
+      "rank": 1,
+      "food": "<food name exactly as written in the list above>",
+      "explanation": "<1–2 sentences on why this is a crowd favourite>"
+    }},
+    {{
+      "rank": 2,
+      "food": "<food name exactly as written in the list above>",
+      "explanation": "<1–2 sentences on why this is a crowd favourite>"
+    }}
+  ],
+  "drink_recommendation": {{
+    "drink": "<drink name exactly as written in the list above>",
+    "explanation": "<1–2 sentences on why this is a crowd favourite>"
+  }},
+  "closing": "<1–2 warm, inviting closing sentences>"
 }}
 """.strip()

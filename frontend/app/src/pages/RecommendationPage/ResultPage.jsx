@@ -206,7 +206,7 @@ const styles = `
     background: linear-gradient(90deg, #d45a4a, #e88a7a);
   }
 
-  /* ── Low-confidence notice ── */
+  /* ── Low-confidence / discovering notice ── */
   .result-low-confidence-notice {
     margin-top: 20px;
     padding-top: 20px;
@@ -225,6 +225,41 @@ const styles = `
     font-size: 0.85rem;
     line-height: 1.65;
     color: #6b5d52;
+  }
+  .result-discovering-notice {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0ebe3;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .result-discovering-icon {
+    font-size: 1rem;
+    color: #c9a87c;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .result-discovering-text {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: #6b5d52;
+  }
+
+  /* ── Crowd-favourites framing badge ── */
+  .result-framing-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f0ebe3;
+    border: 1px solid #e2dbd2;
+    padding: 5px 12px;
+    border-radius: 100px;
+    font-size: 0.72rem;
+    color: #7c6f5e;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    margin-bottom: 14px;
   }
 
   /* ── Scores breakdown ── */
@@ -524,7 +559,14 @@ export default function ResultPage() {
     navigate("/");
   };
 
-  const isLowConfidence = result && (result.confidence_score || 0) < 0.5;
+  const confidenceTier = result?.confidence_tier
+    ?? ((result?.confidence_score ?? 0) < 0.45 ? "retry"
+        : (result?.confidence_score ?? 0) <= 0.55 ? "discovering"
+        : "confident");
+
+  const isRetry = result && confidenceTier === "retry";
+  const isDiscovering = result && confidenceTier === "discovering";
+  const isLowConfidence = isRetry; // hides recommendations for retry tier only
 
   return (
     <>
@@ -615,8 +657,8 @@ export default function ResultPage() {
                 <p className="result-score-reasoning">"{result.scores.reasoning}"</p>
               )}
 
-              {/* Low-confidence notice */}
-              {isLowConfidence && (
+              {/* Retry notice — answers too brief */}
+              {isRetry && (
                 <div className="result-low-confidence-notice">
                   <span className="result-low-confidence-icon">✦</span>
                   <p className="result-low-confidence-text">
@@ -625,12 +667,29 @@ export default function ResultPage() {
                   </p>
                 </div>
               )}
+
+              {/* Discovering notice — Explorer profile, crowd favourites shown */}
+              {isDiscovering && (
+                <div className="result-discovering-notice">
+                  <span className="result-discovering-icon">✦</span>
+                  <p className="result-discovering-text">
+                    You&apos;re still finding your creative style — and that&apos;s a great place to start.
+                    We&apos;ve put together our crowd favourites below so you have something to explore.
+                    Take the quiz again with a few more details whenever you&apos;re ready for a fully personalised profile.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* ── Activity Recommendations ── */}
             {!isLowConfidence && result.activity_explanations && result.activity_explanations.length > 0 && (
               <div className="result-section">
-                <h2 className="result-section-title">Your Recommended Activities</h2>
+                {isDiscovering && result.recommendation_framing && (
+                  <div className="result-framing-badge">✦ {result.recommendation_framing}</div>
+                )}
+                <h2 className="result-section-title">
+                  {isDiscovering ? "Most Loved Activities" : "Your Recommended Activities"}
+                </h2>
                 {result.activity_explanations
                   .sort((a, b) => a.rank - b.rank)
                   .map((item) => (
@@ -648,7 +707,9 @@ export default function ResultPage() {
             {/* ── Food & Drink Recommendations ── */}
             {!isLowConfidence && (result.food_recommendation_details?.length > 0 || result.drink_recommendation_details) && (
               <div className="result-section">
-                <h2 className="result-section-title">Your Food & Drink Picks</h2>
+                <h2 className="result-section-title">
+                  {isDiscovering ? "Most Loved Food & Drinks" : "Your Food & Drink Picks"}
+                </h2>
                 <div className="result-food-drink-grid">
                   {result.food_recommendation_details && result.food_recommendation_details.length > 0 && (
                     <div className="result-food-drink-card">

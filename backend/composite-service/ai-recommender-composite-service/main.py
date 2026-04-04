@@ -162,6 +162,8 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
             "drink_recommendation_details": ai_data["drink_recommendation_details"],
             "closing": ai_data["closing"],
             "confidence_score": ai_data["confidence_score"],
+            "confidence_tier": ai_data.get("confidence_tier"),
+            "recommendation_framing": ai_data.get("recommendation_framing"),
             "scores": {
                 "solo_social": ai_data["solo_social_score"],
                 "structured_freeform": ai_data["structured_freeform_score"],
@@ -217,6 +219,8 @@ async def get_submission(submission_id: str):
                     "drink_recommendation_details": ai_data.get("drink_recommendation_details", {}),
                     "closing": ai_data.get("closing", ""),
                     "confidence_score": confidence,
+                    "confidence_tier": ai_data.get("confidence_tier"),
+                    "recommendation_framing": ai_data.get("recommendation_framing"),
                     "scores": {
                         "solo_social": solo_score,
                         "structured_freeform": structured_score,

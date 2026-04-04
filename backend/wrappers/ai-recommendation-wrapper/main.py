@@ -1,3 +1,4 @@
+# ai-recommendation-wrapper main.py
 import json
 import logging
 import re
@@ -17,9 +18,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from prompts import (
     SCORING_SYSTEM_PROMPT,
     build_profile_system_prompt,
+    build_explorer_profile_system_prompt,
     AVAILABLE_ACTIVITIES,
     AVAILABLE_FOOD,
     AVAILABLE_DRINKS,
+    CONFIDENCE_THRESHOLDS,
+    POPULARITY_RANKED_ACTIVITIES,
+    POPULARITY_RANKED_FOOD,
+    POPULARITY_RANKED_DRINKS,
+    EXPLORER_ARCHETYPE,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -166,6 +173,64 @@ def _map_scores(solo_social: int, structured_freeform: int) -> str:
         return "Dreamer"
 
 
+def _get_confidence_tier(confidence: float) -> str:
+    """
+    Return which confidence tier a score falls into.
+      'retry'       — below retry_below threshold: ask user to try again
+      'discovering' — in [explorer_min, explorer_max]: Explorer fallback profile
+      'confident'   — above explorer_max: full personalised profile
+    """
+    retry_below = CONFIDENCE_THRESHOLDS["retry_below"]
+    explorer_max = CONFIDENCE_THRESHOLDS["explorer_max"]
+    if confidence < retry_below:
+        return "retry"
+    elif confidence <= explorer_max:
+        return "discovering"
+    return "confident"
+
+
+def _get_popularity_items(
+    n_activities: int = 3,
+    n_food: int = 2,
+    n_drinks: int = 1,
+    disliked_activities: list[str] | None = None,
+    disliked_food: list[str] | None = None,
+    disliked_drinks: list[str] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return the top N crowd-favourite items, filtering out any dislikes."""
+    disliked_activities = disliked_activities or []
+    disliked_food = disliked_food or []
+    disliked_drinks = disliked_drinks or []
+    activities = [a for a in POPULARITY_RANKED_ACTIVITIES if a not in disliked_activities][:n_activities]
+    food = [f for f in POPULARITY_RANKED_FOOD if f not in disliked_food][:n_food]
+    drinks = [d for d in POPULARITY_RANKED_DRINKS if d not in disliked_drinks][:n_drinks]
+    return activities, food, drinks
+
+
+def _compute_axis_lean(solo_social: int, structured_freeform: int) -> dict:
+    """
+    For Explorer profiles, detect whether one axis has noticeably more signal.
+    Only flags a lean when one axis deviates at least 2 points more than the other,
+    so the Explorer profile can subtly reflect partial data without overcommitting.
+    """
+    solo_dev = abs(solo_social - 5)
+    structured_dev = abs(structured_freeform - 5)
+
+    if solo_dev > structured_dev and solo_dev >= 2:
+        return {
+            "axis": "Solo↔Social",
+            "direction": "solo" if solo_social < 5 else "social",
+            "score": solo_social,
+        }
+    if structured_dev > solo_dev and structured_dev >= 2:
+        return {
+            "axis": "Structured↔Freeform",
+            "direction": "structured" if structured_freeform < 5 else "freeform",
+            "score": structured_freeform,
+        }
+    return {}
+
+
 # FIX: confidence based on answer detail + score distinctiveness
 def _compute_confidence(
     solo_social_score: int,
@@ -230,7 +295,37 @@ async def score_answers(answers: list[QuizAnswer]) -> ScoringResult:
 
 
 # ---------------------------------------------------------------------------
-# Call 2 — Profile write-up (temperature: 0.7)
+# Call 2a — Explorer profile (temperature: 0.7, crowd-favourite items forced)
+# ---------------------------------------------------------------------------
+async def generate_explorer_profile(
+    answers: list[QuizAnswer],
+    scores: ScoringResult,
+    top_activities: list[str],
+    top_food: list[str],
+    top_drinks: list[str],
+    axis_lean: dict,
+) -> ProfileResult:
+    user_prompt = (
+        "Customer's Quiz Responses:\n\n"
+        + _format_answers(answers)
+        + f"Solo↔Social Score: {scores.solo_social_score}/10\n"
+        + f"Structured↔Freeform Score: {scores.structured_freeform_score}/10\n"
+        + f"Scoring Reasoning: {scores.reasoning}\n\n"
+        + "Write an Explorer profile for this customer using our crowd-favourite recommendations."
+    )
+    system_prompt = build_explorer_profile_system_prompt(
+        scores.model_dump(),
+        axis_lean,
+        top_activities,
+        top_food,
+        top_drinks,
+    )
+    response_text = await _call_ai(system_prompt, user_prompt, temperature=0.7)
+    return ProfileResult(**_parse_json_response(response_text))
+
+
+# ---------------------------------------------------------------------------
+# Call 2b — Full personalised profile write-up (temperature: 0.7)
 # ---------------------------------------------------------------------------
 async def generate_profile(
     answers: list[QuizAnswer],
@@ -283,6 +378,7 @@ async def store_result(
     drink_recommendation_details: dict,
     profile: ProfileResult,
     confidence: float,
+    confidence_tier: str,
     submitted_at: str | None = None,
 ) -> None:
     if not supabase_client:
@@ -309,6 +405,7 @@ async def store_result(
         "closing": profile.closing,
         # FIX: confidence passed in from recommend() — no recalculation here
         "confidence_score": confidence,
+        "confidence_tier": confidence_tier,
         "submitted_at": submitted_at,
     }
 
@@ -361,6 +458,7 @@ async def recommend(request: RecommendRequest):
                     f"Result already exists for {request.submission_id}, returning stored result"
                 )
                 stored = existing.data[0]
+                stored_confidence = stored["confidence_score"]
                 return {
                     "submission_id": stored["submission_id"],
                     "personality_type": stored["personality_type"],
@@ -376,37 +474,28 @@ async def recommend(request: RecommendRequest):
                     "drink_recommendation": stored.get("drink_recommendation", ""),
                     "drink_recommendation_details": stored.get("drink_recommendation_details", {}),
                     "closing": stored["closing"],
-                    "confidence_score": stored["confidence_score"],
+                    "confidence_score": stored_confidence,
+                    "confidence_tier": stored.get("confidence_tier") or _get_confidence_tier(stored_confidence),
+                    "recommendation_framing": stored.get("recommendation_framing"),
                 }
         except Exception as e:
             logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
 
     try:
+        # Call 1 — always score first
         scores = await score_answers(request.answers)
-        personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
+        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
+        tier = _get_confidence_tier(confidence)
+
         logger.info(
             f"Scored: Solo↔Social={scores.solo_social_score}, "
-            f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
+            f"Structured↔Freeform={scores.structured_freeform_score} | "
+            f"confidence={confidence} → tier={tier}"
         )
 
-        profile = await generate_profile(request.answers, scores, personality_type)
-        recommendations = _extract_recommendations(profile)
-        food_recommendations = _extract_food_recommendations(profile)
-        drink_recommendation = profile.drink_recommendation.get("drink", "")
-
-        logger.info(
-            f"Profile generated: {profile.profile_title} | "
-            f"Activities: {recommendations} | "
-            f"Food: {food_recommendations} | "
-            f"Drink: {drink_recommendation}"
-        )
-
-        # FIX: compute confidence once and pass it through
-        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
-
-        # When confidence is below 50 %, answers were too brief to categorise or recommend.
-        if confidence < 0.50:
-            low_conf_result = {
+        # ── Tier: retry (< 45 %) — answers too sparse, ask user to try again ──
+        if tier == "retry":
+            retry_result = {
                 "submission_id": request.submission_id,
                 "personality_type": "Unknown",
                 "solo_social_score": scores.solo_social_score,
@@ -424,37 +513,73 @@ async def recommend(request: RecommendRequest):
                 "food_recommendation_details": [],
                 "drink_recommendation": "",
                 "drink_recommendation_details": {},
-                "closing": "Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
+                "closing": "Take your time, share a bit more about yourself, and we'll find something perfect for you.",
                 "confidence_score": confidence,
+                "confidence_tier": tier,
+                "recommendation_framing": None,
             }
-
-            # Only store results for authenticated users
             if request.is_authenticated:
                 await store_result(
-                    request.submission_id,
-                    request.user_id,
-                    request.answers,
-                    scores,
-                    low_conf_result["personality_type"],
-                    [],
-                    [],
-                    [],
-                    "",
-                    {},
+                    request.submission_id, request.user_id, request.answers, scores,
+                    retry_result["personality_type"], [], [], [], "", {},
                     ProfileResult(
-                        profile_title=low_conf_result["profile_title"],
-                        profile_body=low_conf_result["profile_body"],
+                        profile_title=retry_result["profile_title"],
+                        profile_body=retry_result["profile_body"],
                         activity_explanations=[],
                         food_recommendations=[],
                         drink_recommendation={"drink": "", "explanation": ""},
-                        closing=low_conf_result["closing"],
+                        closing=retry_result["closing"],
                     ),
-                    confidence,
-                    request.submitted_at,
+                    confidence, tier, request.submitted_at,
                 )
+            return retry_result
 
-            return low_conf_result
+        # ── Tier: discovering (45–55 %) — Explorer archetype + crowd favourites ──
+        if tier == "discovering":
+            axis_lean = _compute_axis_lean(scores.solo_social_score, scores.structured_freeform_score)
+            top_activities, top_food, top_drinks = _get_popularity_items()
+            profile = await generate_explorer_profile(
+                request.answers, scores, top_activities, top_food, top_drinks, axis_lean
+            )
+            personality_type = EXPLORER_ARCHETYPE["personality_type"]
+            recommendations = _extract_recommendations(profile)
+            food_recommendations = _extract_food_recommendations(profile)
+            drink_recommendation = profile.drink_recommendation.get("drink", "")
+            recommendation_framing = "Crowd favourites to get you started"
 
+            logger.info(
+                f"Explorer profile generated: axis_lean={axis_lean} | "
+                f"Activities: {recommendations} | Food: {food_recommendations} | Drink: {drink_recommendation}"
+            )
+            if request.is_authenticated:
+                await store_result(
+                    request.submission_id, request.user_id, request.answers, scores,
+                    personality_type, recommendations, food_recommendations,
+                    profile.food_recommendations, drink_recommendation, profile.drink_recommendation,
+                    profile, confidence, tier, request.submitted_at,
+                )
+            return {
+                "submission_id": request.submission_id,
+                "personality_type": personality_type,
+                "solo_social_score": scores.solo_social_score,
+                "structured_freeform_score": scores.structured_freeform_score,
+                "scoring_reasoning": scores.reasoning,
+                "profile_title": profile.profile_title,
+                "profile_body": profile.profile_body,
+                "recommendations": recommendations,
+                "activity_explanations": profile.activity_explanations,
+                "food_recommendations": food_recommendations,
+                "food_recommendation_details": profile.food_recommendations,
+                "drink_recommendation": drink_recommendation,
+                "drink_recommendation_details": profile.drink_recommendation,
+                "closing": profile.closing,
+                "confidence_score": confidence,
+                "confidence_tier": tier,
+                "recommendation_framing": recommendation_framing,
+            }
+
+        # ── Tier: confident (> 55 %) — full personalised profile ──
+        personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
         profile = await generate_profile(request.answers, scores, personality_type)
         recommendations = _extract_recommendations(profile)
         food_recommendations = _extract_food_recommendations(profile)
@@ -462,29 +587,15 @@ async def recommend(request: RecommendRequest):
 
         logger.info(
             f"Profile generated: {profile.profile_title} | "
-            f"Activities: {recommendations} | "
-            f"Food: {food_recommendations} | "
-            f"Drink: {drink_recommendation}"
+            f"Activities: {recommendations} | Food: {food_recommendations} | Drink: {drink_recommendation}"
         )
-
-        # Only store results for authenticated users
         if request.is_authenticated:
             await store_result(
-                request.submission_id,
-                request.user_id,
-                request.answers,
-                scores,
-                personality_type,
-                recommendations,
-                food_recommendations,
-                profile.food_recommendations,
-                drink_recommendation,
-                profile.drink_recommendation,
-                profile,
-                confidence,
-                request.submitted_at,
+                request.submission_id, request.user_id, request.answers, scores,
+                personality_type, recommendations, food_recommendations,
+                profile.food_recommendations, drink_recommendation, profile.drink_recommendation,
+                profile, confidence, tier, request.submitted_at,
             )
-
         return {
             "submission_id": request.submission_id,
             "personality_type": personality_type,
@@ -501,6 +612,8 @@ async def recommend(request: RecommendRequest):
             "drink_recommendation_details": profile.drink_recommendation,
             "closing": profile.closing,
             "confidence_score": confidence,
+            "confidence_tier": tier,
+            "recommendation_framing": None,
         }
 
     except Exception as e:
@@ -525,7 +638,11 @@ async def get_quiz_results(submission_id: str):
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Results not found")
-        return result.data[0]
+        record = result.data[0]
+        # Derive confidence_tier if not stored (backwards compatibility)
+        if "confidence_tier" not in record or not record["confidence_tier"]:
+            record["confidence_tier"] = _get_confidence_tier(record.get("confidence_score", 0.4))
+        return record
     except HTTPException:
         raise
     except Exception as e:
