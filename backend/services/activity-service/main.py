@@ -62,9 +62,6 @@ def home():
 @app.get("/activities")
 def get_activities():
     response = supabase.table("activities").select("*").execute()
-<<<<<<< Updated upstream
-    return {"activities": response.data}
-=======
     return {"activities": response.data or []}
 
 @app.post("/bookings")
@@ -150,7 +147,6 @@ def get_booking_availability(start_time: str, end_time: str, activity_id: str):
 def list_bookings():
     response = supabase.table("bookings").select("*").execute()
     return {"success": True, "bookings": response.data}
->>>>>>> Stashed changes
 
 
 @app.post("/bookings")
