@@ -530,7 +530,7 @@ async def get_user_results(user_id: str):
     try:
         result = (
             supabase_client.table("quiz_results")
-            .select("submission_id, personality_type, confidence_score")
+            .select("submission_id, personality_type, confidence_score, submitted_at")
             .eq("user_id", user_id)
             .order("submission_id", desc=True)
             .execute()
