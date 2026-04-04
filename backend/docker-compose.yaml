@@ -1,5 +1,23 @@
 services:
 
+  menu-db:
+    image: postgres:16
+    container_name: menu-db
+    environment:
+      - POSTGRES_DB=menu_db
+      - POSTGRES_USER=menu_user
+      - POSTGRES_PASSWORD=menu_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - menu_db_data:/var/lib/postgresql/data
+      - ./services/menu-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U menu_user -d menu_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -142,8 +160,11 @@ services:
       context: ./services/menu-service
       dockerfile: Dockerfile
     container_name: menu-service
-    env_file:
-      - ./services/menu-service/.env
+    environment:
+      - DATABASE_URL=postgresql://menu_user:menu_pass@menu-db:5432/menu_db
+    depends_on:
+      menu-db:
+        condition: service_healthy
     ports:
      - "8013:8000"
 
@@ -156,5 +177,9 @@ services:
        - ./services/foodOrder-service/.env
     ports:
      - "8014:8000"
+
+
+volumes:
+  menu_db_data:
 
 
