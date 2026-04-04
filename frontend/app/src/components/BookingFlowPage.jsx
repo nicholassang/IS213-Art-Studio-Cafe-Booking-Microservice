@@ -51,23 +51,6 @@ export default function BookingPage() {
   const menuItems = bookingPageData?.bookingPageData?.menu || [];
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const activityResp = await apiClient.get("/activities");
-        const menuResp = await apiClient.get("/menu");
-        setActivities(activityResp.data.activities || []);
-        setMenuItems(menuResp.data.menu || []);
-      } catch (err) {
-        console.error("Could not load booking options", err);
-        setStatusMessage("Unable to load activities or food menu. Try again soon or refresh your browser.");
-      }
-    };
-
-    console.error("Could not load booking options", bookingPageError);
-    setStatusMessage("Unable to load activities or food menu. Try again soon.");
-  }, [bookingPageError]);
-
-  useEffect(() => {
     if (user?.email) {
       setContactEmail(user.email);
       return;
