@@ -9,9 +9,9 @@ import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
-import ResultPage from "../pages/RecommendationPage/ResultPage.jsx";
-import PastRecommendations from "../pages/RecommendationPage/PastRecommendations.jsx";
+import BookingPage from "../pages/BookingPage/CalendarBooking.jsx";
 
+// Protected route wrapper
 const Protected = ({ user, children }) => {
   if (!user) return <Navigate to="/login" replace />;
   return children;
@@ -26,21 +26,47 @@ const LayoutWithChat = ({ ChatWidget }) => (
 
 export const router = (user, ChatWidget) =>
   createBrowserRouter([
+    // home
+    { path: "/", element: <HomePage /> },
+    // auth 
+    { path: "/login", element: <LoginPage /> },
+    { path: "/register", element: <RegisterPage /> },
     {
-      element: <LayoutWithChat ChatWidget={ChatWidget} />,
-      children: [
-        { path: "/",                          element: <HomePage /> },
-        { path: "/login",                     element: <LoginPage /> },
-        { path: "/register",                  element: <RegisterPage /> },
-        { path: "/activities",                element: <ActivityList /> },
-        { path: "/activity/:id",              element: <ActivityDetail /> },
-        { path: "/menu",                      element: <FoodMenu /> },
-        { path: "/menu/:id",                  element: <FoodDetail /> },
-        { path: "/cart",                      element: <Cart /> },
-        { path: "/saved-experiences",         element: <SavedExperiences /> },
-        { path: "/payment",                   element: <PaymentPage /> },
-        { path: "/quiz/result/:submissionId", element: <ResultPage /> },
-        { path: "/my-recommendations",     element: <PastRecommendations /> },
-      ],
+      path: "/activities",
+      element: <ActivityList />,
     },
-  ]);
+    {
+      path: "/activity/:id",
+      element: <ActivityDetail />,
+    },
+    // AI quiz
+    { path: "/quiz", 
+      element: <Questionnaire /> 
+    },
+    // quiz result
+    { path: "/quiz/result/:submissionId", 
+      element: <Recommendation /> 
+    },
+
+    {
+      path: "/menu",
+      element: <FoodMenu />,
+    },
+    {
+      path: "/menu/:id",
+      element: <FoodDetail />
+    },
+    {
+      path: "/cart",
+      element: <Cart />
+    },
+    {
+      path: "/saved-experiences",
+      element: <SavedExperiences />
+    },
+    {
+      path: "/payment",
+      element: <PaymentPage />,
+    },
+]);
+
