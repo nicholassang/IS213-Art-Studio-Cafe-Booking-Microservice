@@ -77,6 +77,8 @@ services:
   ai-recommender-composite-service:
     build: ./composite-service/ai-recommender-composite-service
     container_name: ai-recommender-composite-service
+    environment:
+      - MAKE_BOOKING_URL=http://composite-service:8000
     depends_on:
       - quiz-service
       - ai-recommendation-wrapper

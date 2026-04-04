@@ -1,50 +1,11 @@
 # prompts.py
 #
-# All prompts and static data for the AI recommender service.
+# All prompts for the AI recommender service.
 # Imported by main.py — do not instantiate FastAPI or any service logic here.
 #
 # Contains:
 #   SCORING_SYSTEM_PROMPT        — system prompt for Call 1 (blind scoring)
 #   build_profile_system_prompt  — builds system prompt for Call 2 (profile write-up)
-#   AVAILABLE_ACTIVITIES         — all activities the café offers (AI picks from these)
-#   AVAILABLE_FOOD               — all food items the café offers (AI picks from these)
-#   AVAILABLE_DRINKS             — all drinks the café offers (AI picks from these)
-
-
-# ---------------------------------------------------------------------------
-# Available activities — AI must only recommend from this list
-# ---------------------------------------------------------------------------
-AVAILABLE_ACTIVITIES = [
-    "Oil Painting",
-    "Clay Sculpting",
-    "Watercoloring",
-    "Acrylic Painting",
-    "Art Jamming",
-]
-
-# ---------------------------------------------------------------------------
-# Available food — AI must only recommend from this list
-# ---------------------------------------------------------------------------
-AVAILABLE_FOOD = [
-    "Avocado Toast",
-    "Beef Lasagne",
-    "Truffle Pasta",
-    "Caesar Salad",
-    "Chocolate Lava Cake",
-    "Tiramisu",
-    "Red Velvet Cake",
-    "Croissant",
-]
-
-# ---------------------------------------------------------------------------
-# Available drinks — AI must only recommend from this list
-# ---------------------------------------------------------------------------
-AVAILABLE_DRINKS = [
-    "Iced Latte",
-    "Mango Smoothie",
-    "Strawberry Lemonade",
-    "Hot Chocolate",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +52,12 @@ Respond ONLY with valid JSON in exactly this format, with no preamble or markdow
 def build_profile_system_prompt(
     personality_type: str,
     scores: dict,
-    disliked_activities: list[str] = [],
-    disliked_food: list[str] = [],
-    disliked_drinks: list[str] = [],
+    activities: list[str],
+    food_items: list[str],
+    drink_items: list[str],
+    disliked_activities: list[str] | None = None,
+    disliked_food: list[str] | None = None,
+    disliked_drinks: list[str] | None = None,
 ) -> str:
     type_descriptions = {
         "Craftsman": (
@@ -120,9 +84,16 @@ def build_profile_system_prompt(
 
     type_desc = type_descriptions.get(personality_type, "")
 
-    available_activities = [a for a in AVAILABLE_ACTIVITIES if a not in disliked_activities]
-    available_food = [f for f in AVAILABLE_FOOD if f not in disliked_food]
-    available_drinks = [d for d in AVAILABLE_DRINKS if d not in disliked_drinks]
+    if disliked_activities is None:
+        disliked_activities = []
+    if disliked_food is None:
+        disliked_food = []
+    if disliked_drinks is None:
+        disliked_drinks = []
+
+    available_activities = [a for a in activities if a not in disliked_activities]
+    available_food = [f for f in food_items if f not in disliked_food]
+    available_drinks = [d for d in drink_items if d not in disliked_drinks]
 
     disliked_activities_str = (
         f"The customer has said they dislike or want to avoid these activities: {', '.join(disliked_activities)}. Do not recommend these."

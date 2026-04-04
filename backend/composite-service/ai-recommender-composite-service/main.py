@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 import logging
+import os
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,7 @@ app.add_middleware(
 
 QUIZ_URL = "http://quiz-service:8000"
 AI_URL = "http://ai-recommendation-wrapper:8000"
+MAKE_BOOKING_URL = os.getenv("MAKE_BOOKING_URL", "http://composite-service:8000")
 
 # Default timeout for passthrough routes
 PASSTHROUGH_TIMEOUT = 10.0
@@ -147,13 +149,43 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
         f"answers={len(quiz_data['answers'])}"
     )
 
-    # Step 2: Pass Q&A to AI atomic
+    # Step 2: Fetch activities and menu from make-booking composite
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            activities_resp = await client.get(f"{MAKE_BOOKING_URL}/activities")
+            menu_resp = await client.get(f"{MAKE_BOOKING_URL}/menu")
+
+        activities_data = activities_resp.json().get("activities", []) if activities_resp.status_code == 200 else []
+        menu_data = menu_resp.json().get("menu", []) if menu_resp.status_code == 200 else []
+
+        activity_names = [a["name"] for a in activities_data if "name" in a]
+
+        # Separate food and drinks by category (case-insensitive match on known drink categories)
+        drink_categories = {"coffee", "smoothie", "lemonade", "hot drink", "iced drink", "tea", "juice", "beverage", "drink"}
+        food_items = []
+        drink_items = []
+        for item in menu_data:
+            item_category = item.get("category", "").lower()
+            if any(dc in item_category for dc in drink_categories):
+                drink_items.append(item["name"])
+            else:
+                food_items.append(item["name"])
+    except Exception as exc:
+        logger.warning(f"Failed to fetch catalog data from make-booking composite: {exc}")
+        activity_names = []
+        food_items = []
+        drink_items = []
+
+    # Step 3: Pass Q&A + catalog data to AI atomic
     ai_payload = {
         "submission_id": quiz_data["submission_id"],
         "user_id": quiz_data["user_id"],
         "answers": quiz_data["answers"],
         "submitted_at": quiz_data["submitted_at"],
         "is_authenticated": authenticated,
+        "activities": activity_names,
+        "food": food_items,
+        "drinks": drink_items,
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:

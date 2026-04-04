@@ -12,9 +12,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from prompts import (
     SCORING_SYSTEM_PROMPT,
     build_profile_system_prompt,
-    AVAILABLE_ACTIVITIES,
-    AVAILABLE_FOOD,
-    AVAILABLE_DRINKS,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +73,9 @@ class RecommendRequest(BaseModel):
     answers: list[QuizAnswer] = Field(..., min_length=1)
     submitted_at: str | None = None
     is_authenticated: bool = True
+    activities: list[str] | None = None
+    food: list[str] | None = None
+    drinks: list[str] | None = None
 
 
 class ScoringResult(BaseModel):
@@ -225,6 +225,9 @@ async def generate_profile(
     answers: list[QuizAnswer],
     scores: ScoringResult,
     personality_type: str,
+    activities: list[str],
+    food_items: list[str],
+    drink_items: list[str],
     disliked_activities: list[str] | None = None,
     disliked_food: list[str] | None = None,
     disliked_drinks: list[str] | None = None,
@@ -248,9 +251,12 @@ async def generate_profile(
     system_prompt = build_profile_system_prompt(
         personality_type,
         scores.model_dump(),
-        disliked_activities,
-        disliked_food,
-        disliked_drinks,
+        activities=activities,
+        food_items=food_items,
+        drink_items=drink_items,
+        disliked_activities=disliked_activities,
+        disliked_food=disliked_food,
+        disliked_drinks=disliked_drinks,
     )
     response_text = await _call_ai(system_prompt, user_prompt, temperature=0.7)
     return ProfileResult(**_parse_json_response(response_text))
@@ -432,7 +438,14 @@ async def recommend(request: RecommendRequest):
             return low_conf_result
 
         # Confidence passed — generate the full profile
-        profile = await generate_profile(request.answers, scores, personality_type)
+        profile = await generate_profile(
+            request.answers,
+            scores,
+            personality_type,
+            activities=request.activities or [],
+            food_items=request.food or [],
+            drink_items=request.drinks or [],
+        )
         recommendations = _extract_recommendations(profile)
         food_recommendations = _extract_food_recommendations(profile)
         drink_recommendation = profile.drink_recommendation.get("drink", "")
