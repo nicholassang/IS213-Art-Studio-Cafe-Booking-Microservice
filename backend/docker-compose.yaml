@@ -72,6 +72,24 @@ services:
       timeout: 5s
       retries: 5
 
+  quiz-db:
+    image: postgres:16
+    container_name: quiz-db
+    environment:
+      - POSTGRES_DB=quiz_db
+      - POSTGRES_USER=quiz_user
+      - POSTGRES_PASSWORD=quiz_pass
+    ports:
+      - "5437:5432"
+    volumes:
+      - quiz_db_data:/var/lib/postgresql/data
+      - ./services/quiz-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiz_user -d quiz_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -227,8 +245,20 @@ services:
       context: ./services/quiz-service
       dockerfile: Dockerfile
     container_name: quiz-service
-    env_file:
-      - ./services/quiz-service/.env
+    environment:
+      - DATABASE_URL=postgresql://quiz_user:quiz_pass@quiz-db:5432/quiz_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - QUIZ_EXCHANGE=quiz_events
+    depends_on:
+      quiz-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/quiz/questions')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
      - "8012:8000"
 
@@ -264,5 +294,6 @@ volumes:
   foodorder_db_data:
   user_db_data:
   activity_db_data:
+  quiz_db_data:
 
 
