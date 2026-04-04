@@ -1,18 +1,21 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client
+from supabase import create_client, Client
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
 from typing import Optional
 import re
+from dotenv import load_dotenv
+import os
 
-# Initialize Supabase client
-SUPABASE_URL = "https://blgtzrznellrbuptcogs.supabase.co"
-SUPABASE_KEY = "sb_publishable_VabQeIqtF9gGYouJFlyYhA_MaUdg9L7"
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+load_dotenv()
 
 app = FastAPI()
+
+# Initialize Supabase client
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # Allow frontend later to access this service
