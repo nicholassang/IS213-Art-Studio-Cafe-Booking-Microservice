@@ -2,6 +2,14 @@ _format_version: "3.0"
 _transform: true
 
 services:
+  - name: graphql-gateway
+    url: http://graphql-gateway:8000
+    routes:
+      - name: graphql-routes
+        paths:
+          - /graphql
+        strip_path: false
+
   - name: user-service
     url: http://user-service:8000
     routes:

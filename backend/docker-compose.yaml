@@ -74,6 +74,16 @@ services:
       - activity-service
       - notification-service
 
+  graphql-gateway:
+    build: ./graphql-gateway
+    container_name: graphql-gateway
+    environment:
+      - BOOKING_COMPOSITE_URL=http://make-booking-composite-service:8000
+    depends_on:
+      - composite-service
+    ports:
+      - "8015:8000"
+
   ai-recommender-composite-service:
     build: ./composite-service/ai-recommender-composite-service
     container_name: ai-recommender-composite-service

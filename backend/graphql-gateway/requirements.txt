@@ -1,0 +1,4 @@
+fastapi==0.111.0
+httpx==0.27.0
+strawberry-graphql[fastapi]==0.275.5
+uvicorn[standard]==0.29.0

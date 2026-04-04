@@ -1,11 +1,15 @@
 // BookingPage.jsx
 import { useState, useEffect } from "react";
+import { useLazyQuery, useMutation, useQuery } from "@apollo/client";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { getSlotAvailability } from "../api/calendar";
 import { useAuth } from "../context/AuthContext";
-import apiClient from "../services/apiClient";
+import {
+  CREATE_BOOKING,
+  GET_BOOKING_AVAILABILITY,
+  GET_BOOKING_PAGE_DATA,
+} from "../graphql/booking";
 
 const DEFAULT_BOOKING_PAYMENT_METHOD = "pm_card_visa";
 
@@ -13,46 +17,47 @@ export default function BookingPage() {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [bookingId, setBookingId] = useState(null);
-  const [activities, setActivities] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
   const [selectedFood, setSelectedFood] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
-  const [loadingBooking, setLoadingBooking] = useState(false);
-  const [loadingSlotAvailability, setLoadingSlotAvailability] = useState(false);
   const [slotAvailability, setSlotAvailability] = useState(null);
   const [contactEmail, setContactEmail] = useState("");
   const { user } = useAuth();
+  const {
+    data: bookingPageData,
+    error: bookingPageError,
+    loading: loadingBookingPageData,
+  } = useQuery(GET_BOOKING_PAGE_DATA);
+  const [loadSlotAvailability, { loading: loadingSlotAvailability }] = useLazyQuery(
+    GET_BOOKING_AVAILABILITY,
+    { fetchPolicy: "no-cache" }
+  );
+  const [createBooking, { loading: loadingBooking }] = useMutation(CREATE_BOOKING);
 
   const getBookingErrorMessage = (error) => {
-    const detail = error.response?.data?.detail;
-
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
+    const graphQLError = error?.graphQLErrors?.[0];
+    if (graphQLError?.message) {
+      return graphQLError.message;
     }
 
-    if (detail && typeof detail === "object") {
-      return detail.message || detail.downstream_response?.detail || detail.downstream_response?.message;
+    const networkErrors = error?.networkError?.result?.errors;
+    if (networkErrors?.[0]?.message) {
+      return networkErrors[0].message;
     }
 
-    return error.response?.data?.message || "Failed to complete booking. Please try again.";
+    return error?.message || "Failed to complete booking. Please try again.";
   };
 
+  const activities = bookingPageData?.bookingPageData?.activities || [];
+  const menuItems = bookingPageData?.bookingPageData?.menu || [];
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const activityResp = await apiClient.get("/activities");
-        const menuResp = await apiClient.get("/menu");
-        setActivities(activityResp.data.activities || []);
-        setMenuItems(menuResp.data.menu || []);
-      } catch (err) {
-        console.error("Could not load booking options", err);
-        setStatusMessage("Unable to load activities or food menu. Try again soon.");
-      }
-    };
+    if (!bookingPageError) {
+      return;
+    }
 
-    fetchData();
-  }, []);
+    console.error("Could not load booking options", bookingPageError);
+    setStatusMessage("Unable to load activities or food menu. Try again soon.");
+  }, [bookingPageError]);
 
   useEffect(() => {
     if (user?.email) {
@@ -73,14 +78,16 @@ export default function BookingPage() {
       return null;
     }
 
-    setLoadingSlotAvailability(true);
-
     try {
-      const availability = await getSlotAvailability(
-        slotInfo.start.toISOString(),
-        slotInfo.end.toISOString(),
-        activityInfo.id
-      );
+      const result = await loadSlotAvailability({
+        variables: {
+          startTime: slotInfo.start.toISOString(),
+          endTime: slotInfo.end.toISOString(),
+          activityId: String(activityInfo.id),
+        },
+      });
+
+      const availability = result.data?.bookingAvailability || null;
       setSlotAvailability(availability);
       return availability;
     } catch (error) {
@@ -88,8 +95,6 @@ export default function BookingPage() {
       setSlotAvailability(null);
       setStatusMessage("Unable to load slot availability right now.");
       return null;
-    } finally {
-      setLoadingSlotAvailability(false);
     }
   };
 
@@ -116,37 +121,40 @@ export default function BookingPage() {
       return;
     }
 
-    if (slotAvailability?.remaining_slots === 0) {
+    if (slotAvailability?.remainingSlots === 0) {
       setStatusMessage("This slot is already full. Please choose a different time.");
       return;
     }
 
-    setLoadingBooking(true);
-
     try {
-      const resp = await apiClient.post("/booking", {
-        user_name: user.username,
-        user_email: contactEmail,
-        activity_id: selectedActivity.id,
-        start_time: selectedSlot.start.toISOString(),
-        end_time: selectedSlot.end.toISOString(),
-        food_items: orderedFoodItems,
-        payment_method: DEFAULT_BOOKING_PAYMENT_METHOD,
+      const response = await createBooking({
+        variables: {
+          input: {
+            userName: user.username,
+            userEmail: contactEmail,
+            activityId: String(selectedActivity.id),
+            startTime: selectedSlot.start.toISOString(),
+            endTime: selectedSlot.end.toISOString(),
+            foodItems: orderedFoodItems,
+            paymentMethod: DEFAULT_BOOKING_PAYMENT_METHOD,
+          },
+        },
       });
 
-      setBookingId(resp.data.booking?.booking?.id || `BK-${Date.now()}`);
-      setStatusMessage(
-        resp.data.notification?.queued
-          ? "Booking completed. Confirmation email queued."
-          : "Booking completed, but the confirmation email could not be queued."
-      );
+      const result = response.data?.createBooking;
+      if (!result?.success) {
+        setStatusMessage(result?.message || "Failed to complete booking. Please try again.");
+        await refreshSlotAvailability(selectedSlot, selectedActivity);
+        return;
+      }
+
+      setBookingId(result.bookingId || `BK-${Date.now()}`);
+      setStatusMessage(result.message);
       await refreshSlotAvailability(selectedSlot);
     } catch (error) {
       console.error("Booking request failed", error);
       setStatusMessage(getBookingErrorMessage(error));
       await refreshSlotAvailability(selectedSlot, selectedActivity);
-    } finally {
-      setLoadingBooking(false);
     }
   };
 
@@ -190,6 +198,7 @@ export default function BookingPage() {
     <div className="booking-page">
       <h1 className="detail-title">Book Your Activity</h1>
       {statusMessage && <p className="status-message">{statusMessage}</p>}
+      {loadingBookingPageData && <p>Loading booking options...</p>}
 
       {/* Activity Selection */}
       <div className="activity-section detail-info-card">
@@ -247,8 +256,8 @@ export default function BookingPage() {
           </p>
           {loadingSlotAvailability && <p>Loading slot availability...</p>}
           {!loadingSlotAvailability && selectedSlot && slotAvailability && (
-            <p className={slotAvailability.is_full ? "slot-full" : "slot-open"}>
-              {slotAvailability.remaining_slots} of {slotAvailability.max_slots} slots left
+            <p className={slotAvailability.isFull ? "slot-full" : "slot-open"}>
+              {slotAvailability.remainingSlots} of {slotAvailability.maxSlots} slots left
             </p>
           )}
         </div>
@@ -264,7 +273,7 @@ export default function BookingPage() {
               className={`food-card ${(selectedFood[food.id] || 0) > 0 ? "selected" : ""}`}
               onClick={() => toggleFoodQuantity(food.id, 1)}
             >
-              <img src={food.image_url} alt={food.name} className="food-image" />
+              <img src={food.imageUrl} alt={food.name} className="food-image" />
               <h3>{food.name}</h3>
               <p>${food.price?.toFixed(2) || "0.00"}</p>
               <div className="food-qty-controls" onClick={(e) => e.stopPropagation()}>
@@ -306,10 +315,10 @@ export default function BookingPage() {
           />
           <p><strong>Activity:</strong> {selectedActivity?.name || "Not selected"}</p>
           <p><strong>Slot:</strong> {selectedSlot ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}` : "Not selected"}</p>
-          <p><strong>Slots Left:</strong> {slotAvailability ? slotAvailability.remaining_slots : "Select a slot"}</p>
+          <p><strong>Slots Left:</strong> {slotAvailability ? slotAvailability.remainingSlots : "Select a slot"}</p>
           <p><strong>Food:</strong> {selectedFoodEntries.length > 0 ? selectedFoodEntries.map((item) => `${item.name} x${item.quantity}`).join(", ") : "Not selected"}</p>
           <p><strong>Total:</strong> ${total.toFixed(2)}</p>
-          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking || slotAvailability?.is_full || selectedFoodEntries.length === 0}>
+          <button className="detail-cta-row detail-cta" onClick={handleBooking} disabled={loadingBooking || slotAvailability?.isFull || selectedFoodEntries.length === 0}>
             {loadingBooking ? "Processing..." : "Confirm & Pay"}
           </button>
           {bookingId && <p className="confirmation">✅ Booking Confirmed! ID: {bookingId}</p>}
