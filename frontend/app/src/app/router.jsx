@@ -40,12 +40,14 @@ export const router = (user, ChatWidget) =>
       element: <ActivityDetail />,
     },
     // AI quiz
-    { path: "/quiz", 
-      element: <Questionnaire /> 
+    {
+      path: "/quiz",
+      element: <Questionnaire />
     },
     // quiz result
-    { path: "/quiz/result/:submissionId", 
-      element: <Recommendation /> 
+    {
+      path: "/quiz/result/:submissionId",
+      element: <Recommendation />
     },
 
     {
@@ -68,5 +70,8 @@ export const router = (user, ChatWidget) =>
       path: "/payment",
       element: <PaymentPage />,
     },
-]);
+
+    { path: "/quiz/result/:submissionId", element: <ResultPage /> },
+    { path: "/my-recommendations", element: <PastRecommendations /> },
+  ]);
 
