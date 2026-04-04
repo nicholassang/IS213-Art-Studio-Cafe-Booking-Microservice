@@ -1,5 +1,95 @@
 services:
 
+  menu-db:
+    image: postgres:16
+    container_name: menu-db
+    environment:
+      - POSTGRES_DB=menu_db
+      - POSTGRES_USER=menu_user
+      - POSTGRES_PASSWORD=menu_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - menu_db_data:/var/lib/postgresql/data
+      - ./services/menu-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U menu_user -d menu_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  foodorder-db:
+    image: postgres:16
+    container_name: foodorder-db
+    environment:
+      - POSTGRES_DB=foodorder_db
+      - POSTGRES_USER=foodorder_user
+      - POSTGRES_PASSWORD=foodorder_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - foodorder_db_data:/var/lib/postgresql/data
+      - ./services/foodOrder-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodorder_user -d foodorder_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-db:
+    image: postgres:16
+    container_name: user-db
+    environment:
+      - POSTGRES_DB=user_db
+      - POSTGRES_USER=user_user
+      - POSTGRES_PASSWORD=user_pass
+    ports:
+      - "5435:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ./services/user-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_user -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  activity-db:
+    image: postgres:16
+    container_name: activity-db
+    environment:
+      - POSTGRES_DB=activity_db
+      - POSTGRES_USER=activity_user
+      - POSTGRES_PASSWORD=activity_pass
+    ports:
+      - "5436:5432"
+    volumes:
+      - activity_db_data:/var/lib/postgresql/data
+      - ./services/activity-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activity_user -d activity_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quiz-db:
+    image: postgres:16
+    container_name: quiz-db
+    environment:
+      - POSTGRES_DB=quiz_db
+      - POSTGRES_USER=quiz_user
+      - POSTGRES_PASSWORD=quiz_pass
+    ports:
+      - "5437:5432"
+    volumes:
+      - quiz_db_data:/var/lib/postgresql/data
+      - ./services/quiz-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiz_user -d quiz_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -24,10 +114,14 @@ services:
     volumes:
       - ./kong/kong.yml:/kong/declarative/kong.yml:ro
     depends_on:
-      - user-service
-      - composite-service
-      - activity-service
-      - ai-recommender-composite-service
+      user-service:
+        condition: service_healthy
+      composite-service:
+        condition: service_started
+      activity-service:
+        condition: service_healthy
+      ai-recommender-composite-service:
+        condition: service_started
 
   # Legacy gateway retained for reference only.
   # It is disabled by default and only starts when profile `legacy-gateway` is enabled.
@@ -51,6 +145,17 @@ services:
   user-service:
     build: ./services/user-service
     container_name: user-service
+    environment:
+      - DATABASE_URL=postgresql://user_user:user_pass@user-db:5432/user_db
+      - SESSION_SECRET=supersecret123
+    depends_on:
+      user-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/profile')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     # expose a port only for debugging; composite and gateway use the internal network
     ports:
       - "8005:8000"
@@ -132,8 +237,16 @@ services:
       context: ./services/activity-service
       dockerfile: Dockerfile
     container_name: activity-service
-    env_file : 
-       - ./services/activity-service/.env
+    environment:
+      - DATABASE_URL=postgresql://activity_user:activity_pass@activity-db:5432/activity_db
+    depends_on:
+      activity-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
      - "8011:8000"
 
@@ -142,8 +255,20 @@ services:
       context: ./services/quiz-service
       dockerfile: Dockerfile
     container_name: quiz-service
-    env_file:
-      - ./services/quiz-service/.env
+    environment:
+      - DATABASE_URL=postgresql://quiz_user:quiz_pass@quiz-db:5432/quiz_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - QUIZ_EXCHANGE=quiz_events
+    depends_on:
+      quiz-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/quiz/questions')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
      - "8012:8000"
 
@@ -152,8 +277,11 @@ services:
       context: ./services/menu-service
       dockerfile: Dockerfile
     container_name: menu-service
-    env_file:
-      - ./services/menu-service/.env
+    environment:
+      - DATABASE_URL=postgresql://menu_user:menu_pass@menu-db:5432/menu_db
+    depends_on:
+      menu-db:
+        condition: service_healthy
     ports:
      - "8013:8000"
 
@@ -162,9 +290,20 @@ services:
       context: ./services/foodOrder-service
       dockerfile: Dockerfile
     container_name: foodorder-service
-    env_file : 
-       - ./services/foodOrder-service/.env
+    environment:
+      - DATABASE_URL=postgresql://foodorder_user:foodorder_pass@foodorder-db:5432/foodorder_db
+    depends_on:
+      foodorder-db:
+        condition: service_healthy
     ports:
      - "8014:8000"
+
+
+volumes:
+  menu_db_data:
+  foodorder_db_data:
+  user_db_data:
+  activity_db_data:
+  quiz_db_data:
 
 
