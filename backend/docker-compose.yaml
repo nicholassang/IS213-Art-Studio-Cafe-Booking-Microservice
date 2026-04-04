@@ -137,6 +137,8 @@ services:
       context: ./services/activity-service
       dockerfile: Dockerfile
     container_name: activity-service
+    env_file : 
+       - ./services/activity-service/.env
     ports:
      - "8011:8000"
 
@@ -155,6 +157,8 @@ services:
       context: ./services/menu-service
       dockerfile: Dockerfile
     container_name: menu-service
+    env_file:
+      - ./services/menu-service/.env
     ports:
      - "8013:8000"
 
@@ -163,6 +167,8 @@ services:
       context: ./services/foodOrder-service
       dockerfile: Dockerfile
     container_name: foodorder-service
+    env_file : 
+       - ./services/foodOrder-service/.env
     ports:
      - "8014:8000"
 
