@@ -231,6 +231,9 @@ export default function HomePage() {
                     <button className="home-btn-primary" onClick={() => navigate("/activities")}>
                       Explore Activities
                     </button>
+                    <button className="home-btn-secondary" onClick={() => navigate("/my-recommendations")}>
+                      My Recommendations
+                    </button>
                     <button className="home-btn-secondary" onClick={logout}>
                       Logout
                     </button>

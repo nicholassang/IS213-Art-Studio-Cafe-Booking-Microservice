@@ -1,240 +1,558 @@
 import json
-import httpx
-import aio_pika
 import logging
-from aio_pika.abc import AbstractIncomingMessage
-from contextlib import asynccontextmanager
+import re
+
+from fastapi import FastAPI, HTTPException
 from groq import AsyncGroq
 from google import genai
 from google.genai import types
-from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
-from prompts import QUIZ_SYSTEM_PROMPT
+from prompts import (
+    SCORING_SYSTEM_PROMPT,
+    build_profile_system_prompt,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     groq_api_key: str
     groq_model: str = "llama-3.1-8b-instant"
 
-    gemini_api_key: str
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
 
-    rabbitmq_url: str = "amqp://guest:guest@localhost/"
-    quiz_exchange: str = "quiz_events"
-    quiz_queue: str = "ai_recommendation_queue"
-    quiz_routing_key: str = "quiz.submitted"
-    prefetch_count: int = 10
-
-    orchestrator_url: str = "http://orchestrator-service/api/recommendations"
+    supabase_url: str = ""
+    supabase_key: str = ""
 
 
 settings = Settings()
 
+supabase_client = None
+if settings.supabase_url and settings.supabase_key:
+    from supabase import create_client
+    supabase_client = create_client(settings.supabase_url, settings.supabase_key)
+
+groq_client = AsyncGroq(api_key=settings.groq_api_key)
+gemini_client = None
+if settings.gemini_api_key:
+    gemini_client = genai.Client(api_key=settings.gemini_api_key)
+
 
 # ---------------------------------------------------------------------------
-# Pydantic models
+# App
+# ---------------------------------------------------------------------------
+app = FastAPI(
+    title="AI Recommendation Service",
+    description="Receives Q&A from composite, scores and profiles the user, returns recommendations.",
+    version="2.0.0",
+)
+
+
+# ---------------------------------------------------------------------------
+# Schemas
 # ---------------------------------------------------------------------------
 class QuizAnswer(BaseModel):
     question_id: str
-    selected_option_id: str
-    question_text: Optional[str] = None
-    option_text: Optional[str] = None
+    question_text: str
+    category: str
+    answer_text: str
 
-class QuizSubmittedEvent(BaseModel):
+
+class RecommendRequest(BaseModel):
     submission_id: str
     user_id: str
     answers: list[QuizAnswer] = Field(..., min_length=1)
-    submitted_at: Optional[str] = None
+    submitted_at: str | None = None
+    is_authenticated: bool = True
+    activities: list[str] | None = None
+    food: list[str] | None = None
+    drinks: list[str] | None = None
 
-class Recommendation(BaseModel):
-    activity: str
-    reason: str
-    confidence: float = Field(..., ge=0.0, le=1.0)
+
+class ScoringResult(BaseModel):
+    solo_social_score: int = Field(..., ge=0, le=10)
+    structured_freeform_score: int = Field(..., ge=0, le=10)
+    reasoning: str
+
+
+class ProfileResult(BaseModel):
+    profile_title: str
+    profile_body: str
+    activity_explanations: list[dict]
+    food_recommendations: list[dict]
+    drink_recommendation: dict
+    closing: str
 
 
 # ---------------------------------------------------------------------------
-# Clients
+# AI helpers
 # ---------------------------------------------------------------------------
-groq_client = AsyncGroq(api_key=settings.groq_api_key)
-gemini_client = genai.Client(api_key=settings.gemini_api_key)
-http_client = httpx.AsyncClient(timeout=10.0)
+async def _call_groq(system_prompt: str, user_prompt: str, temperature: float) -> str:
+    completion = await groq_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        model=settings.groq_model,
+        temperature=temperature,
+    )
+    return completion.choices[0].message.content.strip()
 
-_rabbitmq_connection = None
-_rabbitmq_healthy = False
+
+async def _call_gemini(system_prompt: str, user_prompt: str, temperature: float) -> str:
+    response = await gemini_client.aio.models.generate_content(
+        model=settings.gemini_model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=temperature,
+        ),
+    )
+    return response.text.strip()
 
 
-# ---------------------------------------------------------------------------
-# Lifespan
-# ---------------------------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _rabbitmq_connection, _rabbitmq_healthy
-
+async def _call_ai(system_prompt: str, user_prompt: str, temperature: float) -> str:
+    """Call Groq first, fallback to Gemini if available."""
     try:
-        logger.info(f"Connecting to RabbitMQ at {settings.rabbitmq_url}")
-        _rabbitmq_connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-        logger.info("Connected to RabbitMQ")
-
-        declare_channel = await _rabbitmq_connection.channel()
-        consume_channel = await _rabbitmq_connection.channel()
-        await consume_channel.set_qos(prefetch_count=settings.prefetch_count)
-
-        quiz_exchange = await declare_channel.declare_exchange(
-            settings.quiz_exchange, aio_pika.ExchangeType.TOPIC, durable=True
-        )
-        logger.info(f"Declared exchange: {settings.quiz_exchange}")
-
-        dlq = await declare_channel.declare_queue(
-            f"{settings.quiz_queue}.dead_letter", durable=True
-        )
-        queue = await declare_channel.declare_queue(
-            settings.quiz_queue,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": dlq.name,
-            },
-        )
-        await queue.bind(quiz_exchange, routing_key=settings.quiz_routing_key)
-        logger.info(f"Declared and bound queue: {settings.quiz_queue}")
-
-        # Use the already declared queue for consuming (with same arguments)
-        consume_queue = await consume_channel.declare_queue(
-            settings.quiz_queue,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": dlq.name,
-            },
-        )
-        logger.info(f"Setting up consumer on queue: {settings.quiz_queue}")
-        await consume_queue.consume(on_quiz_submitted)
-        logger.info("Consumer setup complete")
-
-        _rabbitmq_healthy = True
-        logger.info("RabbitMQ setup complete - healthy")
-
+        return await _call_groq(system_prompt, user_prompt, temperature)
     except Exception as e:
-        logger.exception(f"RabbitMQ setup failed: {e}")
-        _rabbitmq_healthy = False
-
-    yield
-
-    await http_client.aclose()
-    if _rabbitmq_connection and not _rabbitmq_connection.is_closed:
-        await _rabbitmq_connection.close()
+        if not gemini_client:
+            logger.error(f"Groq failed and Gemini not configured: {e}")
+            raise
+        logger.warning(f"Groq failed, falling back to Gemini: {e}")
+        return await _call_gemini(system_prompt, user_prompt, temperature)
 
 
-app = FastAPI(lifespan=lifespan)
+def _parse_json_response(text: str) -> dict:
+    text = text.strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError(f"No JSON object found in AI response: {text!r}")
+    return json.loads(match.group())
 
 
-# ---------------------------------------------------------------------------
-# Core logic
-# ---------------------------------------------------------------------------
-def build_quiz_prompt(answers: list[QuizAnswer]) -> str:
-    lines = ["Customer's Quiz Responses:", ""]
-    for answer in answers:
-        question = answer.question_text or f"Question {answer.question_id}"
-        option = answer.option_text or f"Option {answer.selected_option_id}"
-        lines.append(f"- {question}: {option}")
-    lines += ["", "Based on these responses, recommend the best activity."]
+def _map_scores(solo_social: int, structured_freeform: int) -> str:
+    """Map axis scores to personality type."""
+    social = solo_social >= 5
+    freeform = structured_freeform >= 5
+
+    if social and not freeform:
+        return "Workshop Goer"
+    elif social and freeform:
+        return "Free Spirit"
+    elif not social and not freeform:
+        return "Craftsman"
+    else:
+        return "Dreamer"
+
+
+# FIX: confidence based on answer detail + score distinctiveness
+def _compute_confidence(
+    solo_social_score: int,
+    structured_freeform_score: int,
+    answers: list[QuizAnswer] | None = None,
+) -> float:
+    """
+    Confidence = how much we trust this result.
+    - One-word/gibberish answers → below threshold, no recommendations.
+    - Brief but meaningful answers → pass, moderate confidence.
+    - Thoughtful answers + distinct scores → high confidence.
+    """
+    # Score distinctiveness (max 0.20) — distinct preferences add confidence
+    solo_deviation = abs(solo_social_score - 5) / 5.0
+    structured_deviation = abs(structured_freeform_score - 5) / 5.0
+    score_confidence = ((solo_deviation + structured_deviation) / 2) * 0.20
+
+    # Answer quality (max 0.40) — ~100 chars avg → full credit
+    answer_quality = 0.0
+    if answers:
+        avg_len = sum(len(a.answer_text.strip()) for a in answers) / len(answers)
+        answer_quality = min(avg_len / 100.0, 1.0) * 0.40
+
+    # Base floor 0.40
+    return round(0.40 + score_confidence + answer_quality, 2)
+
+
+def _format_answers(answers: list[QuizAnswer]) -> str:
+    lines = []
+    for i, a in enumerate(answers, 1):
+        lines.append(f"Q{i} ({a.category}): {a.question_text}")
+        lines.append(f"  Answer: {a.answer_text}")
+        lines.append("")
     return "\n".join(lines)
 
 
-def parse_recommendation(response_text: str) -> Recommendation:
-    return Recommendation(**json.loads(response_text))
+def _extract_recommendations(profile: ProfileResult) -> list[str]:
+    return [
+        item["activity"]
+        for item in sorted(profile.activity_explanations, key=lambda x: x["rank"])
+    ]
 
 
-async def get_ai_recommendation(answers: list[QuizAnswer]) -> Recommendation:
-    user_prompt = build_quiz_prompt(answers)
+def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
+    return [
+        item["food"]
+        for item in sorted(profile.food_recommendations, key=lambda x: x["rank"])
+    ]
 
-    # Try Groq first
-    try:
-        completion = await groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": QUIZ_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            model=settings.groq_model,
-            temperature=0.3,
-        )
-        return parse_recommendation(completion.choices[0].message.content.strip())
-    except Exception:
-        pass
 
-    # Gemini as fallback
-    try:
-        response = await gemini_client.aio.models.generate_content(
-            model=settings.gemini_model,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=QUIZ_SYSTEM_PROMPT,
-                temperature=0.3
-            )
-        )
-        return parse_recommendation(response.text.strip())
-    except Exception:
-        pass
-
-    return Recommendation(
-        activity="Unknown",
-        reason="Unable to generate a recommendation at this time.",
-        confidence=0.0,
+# ---------------------------------------------------------------------------
+# Call 1 — Scoring (temperature: 0)
+# ---------------------------------------------------------------------------
+async def score_answers(answers: list[QuizAnswer]) -> ScoringResult:
+    user_prompt = (
+        "Customer's Quiz Responses:\n\n"
+        + _format_answers(answers)
+        + "Score this customer on the Solo↔Social and Structured↔Freeform axes."
     )
+    response_text = await _call_ai(SCORING_SYSTEM_PROMPT, user_prompt, temperature=0)
+    return ScoringResult(**_parse_json_response(response_text))
 
 
-async def post_to_orchestrator(event: QuizSubmittedEvent, recommendation: Recommendation) -> None:
-    payload = {
-        "user_id": event.user_id,
-        "submission_id": event.submission_id,
-        "recommendation": recommendation.model_dump(),
+# ---------------------------------------------------------------------------
+# Call 2 — Profile write-up (temperature: 0.7)
+# ---------------------------------------------------------------------------
+async def generate_profile(
+    answers: list[QuizAnswer],
+    scores: ScoringResult,
+    personality_type: str,
+    activities: list[str],
+    food_items: list[str],
+    drink_items: list[str],
+    disliked_activities: list[str] | None = None,
+    disliked_food: list[str] | None = None,
+    disliked_drinks: list[str] | None = None,
+) -> ProfileResult:
+    if disliked_activities is None:
+        disliked_activities = []
+    if disliked_food is None:
+        disliked_food = []
+    if disliked_drinks is None:
+        disliked_drinks = []
+
+    user_prompt = (
+        "Customer's Quiz Responses:\n\n"
+        + _format_answers(answers)
+        + f"Personality Type: {personality_type}\n"
+        + f"Solo↔Social Score: {scores.solo_social_score}/10\n"
+        + f"Structured↔Freeform Score: {scores.structured_freeform_score}/10\n"
+        + f"Scoring Reasoning: {scores.reasoning}\n\n"
+        + "Write a personalised profile for this customer."
+    )
+    system_prompt = build_profile_system_prompt(
+        personality_type,
+        scores.model_dump(),
+        activities=activities,
+        food_items=food_items,
+        drink_items=drink_items,
+        disliked_activities=disliked_activities,
+        disliked_food=disliked_food,
+        disliked_drinks=disliked_drinks,
+    )
+    response_text = await _call_ai(system_prompt, user_prompt, temperature=0.7)
+    return ProfileResult(**_parse_json_response(response_text))
+
+
+# ---------------------------------------------------------------------------
+# Supabase storage
+# ---------------------------------------------------------------------------
+async def store_result(
+    submission_id: str,
+    user_id: str,
+    answers: list[QuizAnswer],
+    scores: ScoringResult,
+    personality_type: str,
+    recommendations: list[str],
+    food_recommendations: list[str],
+    food_recommendation_details: list[dict],
+    drink_recommendation: str,
+    drink_recommendation_details: dict,
+    profile: ProfileResult,
+    confidence: float,
+    submitted_at: str | None = None,
+) -> None:
+    if not supabase_client:
+        logger.warning("Supabase not configured — skipping storage")
+        return
+
+    record = {
+        "submission_id": submission_id,
+        "user_id": user_id,
+        "answers": [a.model_dump() for a in answers],
+        "solo_social_score": scores.solo_social_score,
+        "structured_freeform_score": scores.structured_freeform_score,
+        "scoring_reasoning": scores.reasoning,
+        "personality_type": personality_type,
+        "recommendations": recommendations,
+        # FIX: store food and drink fields so GET /quiz/results returns complete data
+        "food_recommendations": food_recommendations,
+        "food_recommendation_details": food_recommendation_details,
+        "drink_recommendation": drink_recommendation,
+        "drink_recommendation_details": drink_recommendation_details,
+        "profile_title": profile.profile_title,
+        "profile_body": profile.profile_body,
+        "activity_explanations": profile.activity_explanations,
+        "closing": profile.closing,
+        # FIX: confidence passed in from recommend() — no recalculation here
+        "confidence_score": confidence,
+        "submitted_at": submitted_at,
     }
+
     try:
-        response = await http_client.post(settings.orchestrator_url, json=payload)
-        response.raise_for_status()
-        logger.info(f"Recommendation sent to orchestrator for submission {event.submission_id}")
-    except httpx.HTTPError as e:
-        # Log but don't fail - orchestrator might not be available
-        logger.warning(f"Failed to send recommendation to orchestrator: {e}")
-        logger.info(f"Generated recommendation: activity={recommendation.activity}, confidence={recommendation.confidence}")
+        result = supabase_client.table("quiz_results").insert(record).execute()
+        if result.data:
+            logger.info(f"Stored result for {submission_id} (confidence: {confidence})")
+        else:
+            logger.warning(f"Supabase returned empty for {submission_id}")
+    except Exception as e:
+        logger.error(f"Failed to store result for {submission_id}: {e}")
+        try:
+            minimal_record = {
+                "submission_id": submission_id,
+                "user_id": user_id,
+                "answers": [a.model_dump() for a in answers],
+                "solo_social_score": scores.solo_social_score,
+                "structured_freeform_score": scores.structured_freeform_score,
+                "personality_type": personality_type,
+                "recommendations": recommendations,
+            }
+            supabase_client.table("quiz_results").insert(minimal_record).execute()
+            logger.info(f"Stored minimal result for {submission_id}")
+        except Exception as e2:
+            logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
 
 
 # ---------------------------------------------------------------------------
-# RabbitMQ consumer
+# Main endpoint — called by composite with Q&A from quiz atomic
 # ---------------------------------------------------------------------------
-async def on_quiz_submitted(message: AbstractIncomingMessage) -> None:
+@app.post("/recommend")
+async def recommend(request: RecommendRequest):
+    """
+    Receive Q&A from the composite, run AI scoring + profile generation,
+    store result in Supabase, and return the full recommendation to the composite.
+    """
+    logger.info(f"Processing recommendation for submission {request.submission_id}")
+
+    # FIX: idempotency guard — if a result already exists, return it without re-running AI
+    if supabase_client:
+        try:
+            existing = (
+                supabase_client.table("quiz_results")
+                .select("*")
+                .eq("submission_id", request.submission_id)
+                .execute()
+            )
+            if existing.data:
+                logger.info(
+                    f"Result already exists for {request.submission_id}, returning stored result"
+                )
+                stored = existing.data[0]
+                return {
+                    "submission_id": stored["submission_id"],
+                    "personality_type": stored["personality_type"],
+                    "solo_social_score": stored["solo_social_score"],
+                    "structured_freeform_score": stored["structured_freeform_score"],
+                    "scoring_reasoning": stored["scoring_reasoning"],
+                    "profile_title": stored["profile_title"],
+                    "profile_body": stored["profile_body"],
+                    "recommendations": stored["recommendations"],
+                    "activity_explanations": stored["activity_explanations"],
+                    "food_recommendations": stored.get("food_recommendations", []),
+                    "food_recommendation_details": stored.get("food_recommendation_details", []),
+                    "drink_recommendation": stored.get("drink_recommendation", ""),
+                    "drink_recommendation_details": stored.get("drink_recommendation_details", {}),
+                    "closing": stored["closing"],
+                    "confidence_score": stored["confidence_score"],
+                }
+        except Exception as e:
+            logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
+
     try:
-        event = QuizSubmittedEvent(**json.loads(message.body.decode()))
-        recommendation = await get_ai_recommendation(event.answers)
-        await post_to_orchestrator(event, recommendation)
-        await message.ack()
-    except Exception:
-        logger.exception("Failed to process quiz submission")
-        await message.nack(requeue=False)
+        scores = await score_answers(request.answers)
+        personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
+        logger.info(
+            f"Scored: Solo↔Social={scores.solo_social_score}, "
+            f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
+        )
+
+        # FIX: compute confidence once, check before expensive profile generation
+        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
+
+        # When confidence is below 50 %, answers were too brief to categorise or recommend.
+        if confidence < 0.50:
+            low_conf_result = {
+                "submission_id": request.submission_id,
+                "personality_type": "Unknown",
+                "solo_social_score": scores.solo_social_score,
+                "structured_freeform_score": scores.structured_freeform_score,
+                "scoring_reasoning": scores.reasoning,
+                "profile_title": "We'd love to know you better",
+                "profile_body": (
+                    "Your answers were a bit too brief for us to build a meaningful personality profile. "
+                    "We didn't want to guess — your creative preferences deserve more than a wild stab in the dark. "
+                    "Try retaking the quiz with a few more details about what you enjoy, and we'll have a much clearer picture next time."
+                ),
+                "recommendations": [],
+                "activity_explanations": [],
+                "food_recommendations": [],
+                "food_recommendation_details": [],
+                "drink_recommendation": "",
+                "drink_recommendation_details": {},
+                "closing": "Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
+                "confidence_score": confidence,
+            }
+
+            if request.is_authenticated:
+                await store_result(
+                    request.submission_id,
+                    request.user_id,
+                    request.answers,
+                    scores,
+                    low_conf_result["personality_type"],
+                    [],
+                    [],
+                    [],
+                    "",
+                    {},
+                    ProfileResult(
+                        profile_title=low_conf_result["profile_title"],
+                        profile_body=low_conf_result["profile_body"],
+                        activity_explanations=[],
+                        food_recommendations=[],
+                        drink_recommendation={"drink": "", "explanation": ""},
+                        closing=low_conf_result["closing"],
+                    ),
+                    confidence,
+                    request.submitted_at,
+                )
+
+            return low_conf_result
+
+        # Confidence passed — generate the full profile
+        profile = await generate_profile(
+            request.answers,
+            scores,
+            personality_type,
+            activities=request.activities or [],
+            food_items=request.food or [],
+            drink_items=request.drinks or [],
+        )
+        recommendations = _extract_recommendations(profile)
+        food_recommendations = _extract_food_recommendations(profile)
+        drink_recommendation = profile.drink_recommendation.get("drink", "")
+
+        logger.info(
+            f"Profile generated: {profile.profile_title} | "
+            f"Activities: {recommendations} | "
+            f"Food: {food_recommendations} | "
+            f"Drink: {drink_recommendation}"
+        )
+
+        if request.is_authenticated:
+            await store_result(
+                request.submission_id,
+                request.user_id,
+                request.answers,
+                scores,
+                personality_type,
+                recommendations,
+                food_recommendations,
+                profile.food_recommendations,
+                drink_recommendation,
+                profile.drink_recommendation,
+                profile,
+                confidence,
+                request.submitted_at,
+            )
+
+        return {
+            "submission_id": request.submission_id,
+            "personality_type": personality_type,
+            "solo_social_score": scores.solo_social_score,
+            "structured_freeform_score": scores.structured_freeform_score,
+            "scoring_reasoning": scores.reasoning,
+            "profile_title": profile.profile_title,
+            "profile_body": profile.profile_body,
+            "recommendations": recommendations,
+            "activity_explanations": profile.activity_explanations,
+            "food_recommendations": food_recommendations,
+            "food_recommendation_details": profile.food_recommendations,
+            "drink_recommendation": drink_recommendation,
+            "drink_recommendation_details": profile.drink_recommendation,
+            "closing": profile.closing,
+            "confidence_score": confidence,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to generate recommendation for {request.submission_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Result retrieval — composite fetches stored results by submission_id
+# ---------------------------------------------------------------------------
+@app.get("/quiz/results/{submission_id}")
+async def get_quiz_results(submission_id: str):
+    """Fetch AI-generated results for a submission from Supabase."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    try:
+        result = (
+            supabase_client.table("quiz_results")
+            .select("*")
+            .eq("submission_id", submission_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Results not found")
+        return result.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch results for {submission_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quiz/user-results")
+async def get_user_results(user_id: str):
+    """Fetch all AI-generated results for a given user from Supabase."""
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    try:
+        result = (
+            supabase_client.table("quiz_results")
+            .select("submission_id, personality_type, confidence_score, submitted_at")
+            .eq("user_id", user_id)
+            .order("submission_id", desc=True)
+            .execute()
+        )
+        return {"results": result.data or []}
+    except Exception as e:
+        logger.error(f"Failed to fetch results for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Health
+# FIX: Gemini is optional — its absence should not mark the service unhealthy
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():
     issues = []
     if not settings.groq_api_key:
-        issues.append("GROQ_API_KEY is missing")
-    if not settings.gemini_api_key:
-        issues.append("GEMINI_API_KEY is missing")
-    if not _rabbitmq_healthy:
-        issues.append("RabbitMQ is unavailable")
+        issues.append("GROQ_API_KEY missing")
     if issues:
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "issues": issues})
-    return {"status": "healthy"}
+    status = {"status": "healthy"}
+    if not gemini_client:
+        status["warning"] = "GEMINI_API_KEY not set — Groq-only mode, no fallback available"
+    return status
