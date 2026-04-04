@@ -9,6 +9,8 @@ import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
+import ResultPage from "../pages/RecommendationPage/ResultPage.jsx";
+import PastRecommendations from "../pages/RecommendationPage/PastRecommendations.jsx";
 import BookingPage from "../pages/BookingPage/CalendarBooking.jsx";
 
 // Protected route wrapper
@@ -39,16 +41,18 @@ export const router = (user, ChatWidget) =>
       path: "/activity/:id",
       element: <ActivityDetail />,
     },
+
+    { path: "/booking", element: <BookingPage /> },
     // AI quiz
-    {
-      path: "/quiz",
-      element: <Questionnaire />
-    },
+   // {
+      //path: "/quiz",
+      //element: <Questionnaire />
+    //},
     // quiz result
-    {
-      path: "/quiz/result/:submissionId",
-      element: <Recommendation />
-    },
+    //{
+      //path: "/quiz/result/:submissionId",
+      //element: <Recommendation />
+    //},
 
     {
       path: "/menu",
