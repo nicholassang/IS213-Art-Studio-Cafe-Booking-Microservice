@@ -54,6 +54,24 @@ services:
       timeout: 5s
       retries: 5
 
+  activity-db:
+    image: postgres:16
+    container_name: activity-db
+    environment:
+      - POSTGRES_DB=activity_db
+      - POSTGRES_USER=activity_user
+      - POSTGRES_PASSWORD=activity_pass
+    ports:
+      - "5436:5432"
+    volumes:
+      - activity_db_data:/var/lib/postgresql/data
+      - ./services/activity-service/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activity_user -d activity_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -83,7 +101,7 @@ services:
       composite-service:
         condition: service_started
       activity-service:
-        condition: service_started
+        condition: service_healthy
       ai-recommender-composite-service:
         condition: service_started
 
@@ -191,8 +209,16 @@ services:
       context: ./services/activity-service
       dockerfile: Dockerfile
     container_name: activity-service
-    env_file : 
-       - ./services/activity-service/.env
+    environment:
+      - DATABASE_URL=postgresql://activity_user:activity_pass@activity-db:5432/activity_db
+    depends_on:
+      activity-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
      - "8011:8000"
 
@@ -237,5 +263,6 @@ volumes:
   menu_db_data:
   foodorder_db_data:
   user_db_data:
+  activity_db_data:
 
 
