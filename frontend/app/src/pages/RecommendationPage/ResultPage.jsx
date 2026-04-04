@@ -640,9 +640,9 @@ export default function ResultPage() {
         const rec = JSON.parse(cached);
         setResult(rec);
         setLoading(false);
-        const confidence = rec.confidence_score || 0.6;
-        const solo = rec.scores?.solo_social || 5;
-        const structured = rec.scores?.structured_freeform || 5;
+        const confidence = rec.confidence_score ?? 0.6;
+        const solo = rec.scores?.solo_social ?? 5;
+        const structured = rec.scores?.structured_freeform ?? 5;
         setTimeout(() => {
           setConfWidth(Math.round(confidence * 100));
           setSoloWidth((solo / 10) * 100);
@@ -689,9 +689,9 @@ export default function ResultPage() {
         sessionStorage.setItem(`quiz_result_${submissionId}`, JSON.stringify(rec));
 
         // Animate bars after render
-        const confidence = rec.confidence_score || 0.6;
-        const solo = rec.scores?.solo_social || 5;
-        const structured = rec.scores?.structured_freeform || 5;
+        const confidence = rec.confidence_score ?? 0.6;
+        const solo = rec.scores?.solo_social ?? 5;
+        const structured = rec.scores?.structured_freeform ?? 5;
         setTimeout(() => {
           setConfWidth(Math.round(confidence * 100));
           setSoloWidth((solo / 10) * 100);
