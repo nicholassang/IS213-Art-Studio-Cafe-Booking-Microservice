@@ -1,3 +1,4 @@
+// ResultPage.jsx
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_GATEWAY } from "../../constants";
@@ -32,6 +33,22 @@ const styles = `
     font-weight: 700;
   }
   .result-header-brand span { color: #c9a87c; }
+  .result-header-back {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #c9a87c;
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    padding: 7px 16px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+  .result-header-back:hover {
+    background: rgba(255,255,255,0.08);
+    color: #faf8f5;
+  }
 
   /* ── Loading ── */
   .result-loading {
@@ -468,7 +485,6 @@ export default function ResultPage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [confWidth, setConfWidth] = useState(0);
   const [soloWidth, setSoloWidth] = useState(0);
   const [structuredWidth, setStructuredWidth] = useState(0);
 
@@ -483,11 +499,9 @@ export default function ResultPage() {
         const rec = JSON.parse(cached);
         setResult(rec);
         setLoading(false);
-        const confidence = rec.confidence_score || 0.6;
         const solo = rec.scores?.solo_social || 5;
         const structured = rec.scores?.structured_freeform || 5;
         setTimeout(() => {
-          setConfWidth(Math.round(confidence * 100));
           setSoloWidth((solo / 10) * 100);
           setStructuredWidth((structured / 10) * 100);
         }, 200);
@@ -532,11 +546,9 @@ export default function ResultPage() {
         sessionStorage.setItem(`quiz_result_${submissionId}`, JSON.stringify(rec));
 
         // Animate bars after render
-        const confidence = rec.confidence_score || 0.6;
         const solo = rec.scores?.solo_social || 5;
         const structured = rec.scores?.structured_freeform || 5;
         setTimeout(() => {
-          setConfWidth(Math.round(confidence * 100));
           setSoloWidth((solo / 10) * 100);
           setStructuredWidth((structured / 10) * 100);
         }, 200);
@@ -574,6 +586,7 @@ export default function ResultPage() {
       <div className="result-root">
         <div className="result-header">
           <span className="result-header-brand">Café de <span>Paris</span></span>
+          <button className="result-header-back" onClick={() => navigate("/")}>← Home</button>
         </div>
 
         {/* Loading state */}
@@ -613,22 +626,6 @@ export default function ResultPage() {
               <h1 className="result-profile-title">{result.profile_title}</h1>
               <p className="result-profile-body">{result.profile_body}</p>
 
-              {/* Confidence meter */}
-              {result.confidence_score !== undefined && result.confidence_score !== null && (
-                <div className="result-confidence">
-                  <span className="result-confidence-label">Match confidence</span>
-                  <div className="result-confidence-track">
-                    <div
-                      className={`result-confidence-fill${isLowConfidence ? " low" : ""}`}
-                      style={{ width: `${confWidth}%` }}
-                    />
-                  </div>
-                  <span className={`result-confidence-pct${isLowConfidence ? " low" : ""}`}>
-                    {confWidth}%
-                  </span>
-                </div>
-              )}
-
               {/* Scoring breakdown */}
               {result.scores && (
                 <div className="result-scores">
@@ -651,10 +648,6 @@ export default function ResultPage() {
                     </div>
                   </div>
                 </div>
-              )}
-
-              {result.scores?.reasoning && (
-                <p className="result-score-reasoning">"{result.scores.reasoning}"</p>
               )}
 
               {/* Retry notice — answers too brief */}

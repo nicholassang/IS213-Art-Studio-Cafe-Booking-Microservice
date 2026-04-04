@@ -126,22 +126,6 @@ const styles = `
     color: #aaa098;
   }
 
-  .past-card-confidence {
-    text-align: right;
-    flex-shrink: 0;
-  }
-  .past-card-confidence-value {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #c9a87c;
-  }
-  .past-card-confidence-label {
-    font-size: 0.65rem;
-    color: #aaa098;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
   .past-card-arrow {
     font-size: 1rem;
     color: #c9a87c;
@@ -230,7 +214,12 @@ export default function PastRecommendations() {
         }
         const data = await res.json();
         console.log("[PastRec] received:", data);
-        setResults(data.results || []);
+        const sorted = (data.results || []).sort((a, b) => {
+          const dateA = new Date(a.submitted_at || a.created_at || 0);
+          const dateB = new Date(b.submitted_at || b.created_at || 0);
+          return dateB - dateA;
+        });
+        setResults(sorted);
         setLoading(false);
       } catch (err) {
         console.error("[PastRec] error:", err);
@@ -314,8 +303,8 @@ export default function PastRecommendations() {
                 <div className="past-card-info">
                   <div className="past-card-type">{item.personality_type}</div>
                   <div className="past-card-meta">
-                    {item.submitted_at
-                      ? new Date(item.submitted_at).toLocaleDateString("en-GB", {
+                    {(item.submitted_at || item.created_at)
+                      ? new Date(item.submitted_at || item.created_at).toLocaleString("en-GB", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",
@@ -324,12 +313,6 @@ export default function PastRecommendations() {
                         })
                       : "Unknown date"}
                   </div>
-                </div>
-                <div className="past-card-confidence">
-                  <div className="past-card-confidence-value">
-                    {item.confidence_score ? `${Math.round(item.confidence_score * 100)}%` : "—"}
-                  </div>
-                  <div className="past-card-confidence-label">Confidence</div>
                 </div>
                 <div className="past-card-arrow">→</div>
               </div>

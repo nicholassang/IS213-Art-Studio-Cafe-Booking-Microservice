@@ -256,7 +256,7 @@ export default function HomePage() {
 
           <div className="home-status-card">
             <h2 className="home-status-title">
-              {user ? `Welcome back, ${user.username}!` : "Welcome to the studio."}
+              {user ? `Welcome back, ${user.username.replace(/\b\w/g, c => c.toUpperCase())}!` : "Welcome to the studio."}
             </h2>
             <p>
               {user
