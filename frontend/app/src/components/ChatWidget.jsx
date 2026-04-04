@@ -392,6 +392,25 @@ export default function ChatWidget() {
     return () => window.removeEventListener("retake-quiz", handleRetakeQuiz);
   }, []);
 
+  // When auth changes, reset all quiz state so startSession re-runs for the new user
+  // We do NOT clear stored data — each user's session is keyed by their userId in localStorage
+  useEffect(() => {
+    setInitialized(false);
+    setSessionId(null);
+    setQuestions([]);
+    setCurrentQIndex(0);
+    setAnswers({});
+    setInputValue("");
+    setMessages([]);
+    setIsTyping(false);
+    setEditingQuestionId(null);
+    setHasSubmitted(false);
+    setSubmitting(false);
+    setError(null);
+    // Close popup so user sees a clean slate when they reopen it
+    setIsOpen(false);
+  }, [userId]);
+
   const resetQuiz = () => {
     setInitialized(false);
     setSessionId(null);
@@ -406,6 +425,8 @@ export default function ChatWidget() {
     setSubmitting(false);
     setEditingQuestionId(null);
     setHasSubmitted(false);
+    // Clear stored session ID for current user only
+    localStorage.removeItem(`quiz_session_id_${userId}`);
   };
 
   // Start session only once, when popup is first opened
@@ -414,6 +435,73 @@ export default function ChatWidget() {
 
     const startSession = async () => {
       try {
+        // Check if we have a stored session ID for THIS user
+        const storedSessionId = localStorage.getItem(`quiz_session_id_${userId}`);
+        
+        if (storedSessionId) {
+          // Try to restore the session from backend
+          const res = await fetch(`${API_GATEWAY}/quiz/session/${storedSessionId}`);
+          if (res.ok) {
+            const data = await res.json();
+            
+            setSessionId(data.session_id);
+            localStorage.setItem(`quiz_session_id_${userId}`, data.session_id);
+            setQuestions(data.questions);
+            setAnswers(data.answers);
+            
+            // Rebuild messages from questions and answers
+            const messages = [{
+              type: "bot",
+              text: "Welcome back! I'd love to help you discover your perfect creative experience. Let's continue where you left off.",
+            }];
+
+            // Track answered questions and find the first unanswered one
+            let firstUnansweredIndex = -1;
+
+            data.questions.forEach((q, index) => {
+              const prevCategory = index > 0 ? data.questions[index - 1]?.category : null;
+
+              if (data.answers[q.question_id]) {
+                // Add the question and answer
+                messages.push({
+                  type: "bot",
+                  category: q.category,
+                  questionId: q.question_id,
+                  text: q.text,
+                });
+                messages.push({
+                  type: "user",
+                  questionId: q.question_id,
+                  text: data.answers[q.question_id],
+                });
+              } else if (firstUnansweredIndex === -1) {
+                // Only add the FIRST unanswered question
+                firstUnansweredIndex = index;
+                if (q.category !== prevCategory && index > 0) {
+                  messages.push({ type: "divider", category: q.category });
+                }
+                messages.push({
+                  type: "bot",
+                  category: q.category,
+                  questionId: q.question_id,
+                  text: q.text,
+                });
+              }
+            });
+
+            setMessages(messages);
+
+            // Set current question index to the first unanswered question
+            const answeredCount = Object.keys(data.answers).length;
+            setCurrentQIndex(Math.min(answeredCount, data.questions.length - 1));
+            
+            setLoading(false);
+            setInitialized(true);
+            return;
+          }
+        }
+
+        // If no stored session or restore failed, start a new session
         const res = await fetch(`${API_GATEWAY}/quiz/session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -423,6 +511,7 @@ export default function ChatWidget() {
         const data = await res.json();
 
         setSessionId(data.session_id);
+        localStorage.setItem(`quiz_session_id_${userId}`, data.session_id);
         setQuestions(data.questions);
         setMessages([{
           type: "bot",
@@ -439,7 +528,7 @@ export default function ChatWidget() {
     };
 
     startSession();
-  }, [isOpen]);
+  }, [isOpen, userId]);
 
   // Auto-scroll
   useEffect(() => {
@@ -486,15 +575,17 @@ export default function ChatWidget() {
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const text = inputValue.trim();
     if (!text || !questions[currentQIndex]) return;
 
     const q = questions[currentQIndex];
     setMessages(prev => [...prev, { type: "user", questionId: q.question_id, text }]);
     setAnswers(prev => ({ ...prev, [q.question_id]: text }));
-    submitAnswerToBackend(q.question_id, text, false);
     setInputValue("");
+
+    // Wait for backend to persist before moving on
+    await submitAnswerToBackend(q.question_id, text, false);
 
     if (currentQIndex < questions.length - 1) {
       setIsTyping(true);
@@ -553,8 +644,7 @@ export default function ChatWidget() {
       }
 
       setHasSubmitted(true);
-      setEditingQuestionId(null);
-      setInputValue("");
+      resetQuiz();
       setIsOpen(false);
       navigate(`/quiz/result/${data.submission_id}`);
     } catch (err) {
