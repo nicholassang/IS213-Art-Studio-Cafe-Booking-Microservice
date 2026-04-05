@@ -312,6 +312,7 @@ export default function PaymentForm({
   bookingActivity = null,
   bookingSlot = null,
   foodItems = [],
+  orders = [],
   onVoucherApplied,
   onSuccess,
 }) {
@@ -434,6 +435,18 @@ export default function PaymentForm({
 
       if (result.success && result.payment?.Success) {
         clearInterval(timerRef.current);
+
+        // Clear cart — delete all food orders that were part of this booking
+        try {
+          await Promise.all(
+            orders.map((item) =>
+              apiClient.delete(`/food-order/${item.order_id}`)
+            )
+          );
+        } catch (err) {
+          console.error("Failed to clear cart:", err);
+        }
+
         setSuccess(result);
         onSuccess?.(result);
       } else {

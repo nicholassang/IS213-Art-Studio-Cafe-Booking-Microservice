@@ -342,6 +342,7 @@ export default function PaymentPage() {
               bookingActivity={bookingActivity}
               bookingSlot={bookingSlot}
               foodItems={foodItems}
+              orders={orders}
               onVoucherApplied={setAppliedVoucher}
               onSuccess={handleSuccess}
             />
