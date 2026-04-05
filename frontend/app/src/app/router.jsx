@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import HomePage from "../pages/HomePage/HomePage.jsx";
 import LoginPage from "../pages/LoginPage/LoginPage.jsx";
 import RegisterPage from "../pages/RegisterPage/RegisterPage.jsx";
@@ -7,10 +7,10 @@ import ActivityDetail from "../pages/ActivityPage/ActivityDetail.jsx";
 import FoodMenu from "../pages/FoodPage/FoodList.jsx";
 import FoodDetail from "../pages/FoodPage/FoodDetail.jsx";
 import Cart from "../pages/FoodPage/Cart.jsx";
-import Questionnaire from "../pages/RecommendationPage/Questionnaire.jsx"
-import Recommendation from "../pages/RecommendationPage/Recommendation.jsx"
 import SavedExperiences from "../pages/ActivityPage/SavedExperiences.jsx";
 import PaymentPage from "../pages/PaymentPage/PaymentPage.jsx";
+import ResultPage from "../pages/RecommendationPage/ResultPage.jsx";
+import PastRecommendations from "../pages/RecommendationPage/PastRecommendations.jsx";
 import BookingPage from "../pages/BookingPage/CalendarBooking.jsx";
 
 // Protected route wrapper
@@ -19,7 +19,14 @@ const Protected = ({ user, children }) => {
   return children;
 };
 
-export const router = (user) =>
+const LayoutWithChat = ({ ChatWidget }) => (
+  <>
+    <Outlet />
+    <ChatWidget />
+  </>
+);
+
+export const router = (user, ChatWidget) =>
   createBrowserRouter([
     // home
     { path: "/", element: <HomePage /> },
@@ -34,16 +41,18 @@ export const router = (user) =>
       path: "/activity/:id",
       element: <ActivityDetail />,
     },
+
+    { path: "/booking", element: <BookingPage /> },
     // AI quiz
-    {
-      path: "/quiz",
-      element: <Questionnaire />
-    },
+   // {
+      //path: "/quiz",
+      //element: <Questionnaire />
+    //},
     // quiz result
-    {
-      path: "/quiz/result/:submissionId",
-      element: <Recommendation />
-    },
+    //{
+      //path: "/quiz/result/:submissionId",
+      //element: <Recommendation />
+    //},
 
     {
       path: "/menu",
@@ -65,9 +74,8 @@ export const router = (user) =>
       path: "/payment",
       element: <PaymentPage />,
     },
-    {
-      path: "/booking",
-      element: <BookingPage />,
-    }
+
+    { path: "/quiz/result/:submissionId", element: <ResultPage /> },
+    { path: "/my-recommendations", element: <PastRecommendations /> },
   ]);
 

@@ -29,8 +29,10 @@ services:
     routes:
       - name: saved-activity-routes
         paths:
+          - /bookings
           - /saved-activities
           - /saved-experiences
+          - /getAllActivities
         strip_path: false
 
   - name: ai-recommender-composite-service

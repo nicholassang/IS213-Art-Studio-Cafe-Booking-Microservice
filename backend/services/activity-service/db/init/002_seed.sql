@@ -82,4 +82,3 @@ SELECT setval(
   COALESCE((SELECT MAX(id) FROM saved_activities), 1),
   true
 );
-
