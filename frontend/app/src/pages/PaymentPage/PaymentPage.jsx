@@ -119,7 +119,6 @@ const styles = `
     justify-content: space-between;
     align-items: flex-start;
     padding: 14px 0;
-    border-bottom: 1px solid #f0e6d9;
     gap: 16px;
   }
 
