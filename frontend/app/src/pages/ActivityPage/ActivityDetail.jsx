@@ -489,6 +489,10 @@ export default function ActivityDetail() {
             <button className="detail-back" onClick={() => navigate("/activities")}>
               ← Back to activities
             </button>
+
+             <button className="detail-back" onClick={() => navigate("/cart")}>
+                🛒 Cart
+              </button>
           </div>
 
           <div className="detail-grid">
