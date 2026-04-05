@@ -375,6 +375,24 @@ export default function ActivityList() {
                 >
                   ❤️ Saved Experiences
                 </button>
+                
+                <button
+                    onClick={() => navigate("/cart")}
+                    style={{
+                        padding: "12px 18px",
+                        borderRadius: "999px",
+                        border: "1px solid #e6ddd1",
+                        background: "#fffdf9",
+                        color: "#241c17",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontFamily: "'DM Sans', sans-serif",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                    🛒 Cart
+                  </button>
+
               </div>
             </div>
 
