@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import BookingPage from "../../components/BookingFlowPage";
 import Layout from "../../components/Layout";
 import heroImage from "./art-booking-workshop.png";
+import { useState } from "react";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -197,6 +198,10 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
+  const openQuiz = () => {
+    window.dispatchEvent(new CustomEvent("open-quiz"));
+  };
+
   return (
     <>
       <style>{styles}</style>
@@ -228,6 +233,9 @@ export default function HomePage() {
                   </>
                 ) : (
                   <>
+                    <button className="home-btn-primary" onClick={openQuiz}>
+                      ✨ Discover Your Creative Type
+                    </button>
                     <button className="home-btn-primary" onClick={() => navigate("/activities")}>
                       Explore Activities
                     </button>

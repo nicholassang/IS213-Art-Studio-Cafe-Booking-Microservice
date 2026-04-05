@@ -1,10 +1,10 @@
 # Main
 fastapi
 uvicorn
-python-dotenv
+httpx
 pydantic
 pydantic-settings
+python-dotenv
 
-# AI
-groq
-google-genai
+# Database
+supabase
