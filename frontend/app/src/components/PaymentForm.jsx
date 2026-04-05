@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import VoucherInput from "./VoucherInput";
-import { processPayment, createPaymentIntent, cancelPaymentIntent } from "../api/paymentApi";
+import { createPaymentIntent, cancelPaymentIntent } from "../api/paymentApi";
+import apiClient from "../services/apiClient";
+import { useAuth } from "../context/AuthContext";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -69,11 +71,7 @@ const styles = `
     font-family: 'DM Sans', sans-serif;
   }
 
-  .pf-amount-note {
-    font-size: 0.82rem;
-    color: #9e9284;
-    margin-top: 4px;
-  }
+  .pf-amount-note { font-size: 0.82rem; color: #9e9284; margin-top: 4px; }
 
   .pf-savings-badge {
     display: inline-flex;
@@ -88,11 +86,7 @@ const styles = `
     font-weight: 700;
   }
 
-  .pf-field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+  .pf-field-group { display: flex; flex-direction: column; gap: 8px; }
 
   .pf-label {
     font-size: 0.74rem;
@@ -121,16 +115,9 @@ const styles = `
     box-shadow: 0 0 0 4px rgba(200, 169, 126, 0.12);
   }
 
-  .pf-input:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
+  .pf-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .pf-card-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
+  .pf-card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   .pf-test-note {
     background: #f8f4ee;
@@ -146,11 +133,7 @@ const styles = `
 
   .pf-separator { height: 1px; background: #f0e6d9; }
 
-  .pf-summary {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
+  .pf-summary { display: flex; flex-direction: column; gap: 10px; }
 
   .pf-summary-row {
     display: flex;
@@ -168,10 +151,7 @@ const styles = `
     border-top: 1px solid #f0e6d9;
   }
 
-  .pf-summary-row.discount {
-    color: #2d6e2d;
-    font-weight: 600;
-  }
+  .pf-summary-row.discount { color: #2d6e2d; font-weight: 600; }
 
   .pf-submit-btn {
     width: 100%;
@@ -192,15 +172,8 @@ const styles = `
     gap: 10px;
   }
 
-  .pf-submit-btn:hover:not(:disabled) {
-    background: #b38d5e;
-    transform: translateY(-1px);
-  }
-
-  .pf-submit-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
+  .pf-submit-btn:hover:not(:disabled) { background: #b38d5e; transform: translateY(-1px); }
+  .pf-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .pf-timer-bar-wrap {
     background: #f5efe6;
@@ -214,19 +187,9 @@ const styles = `
     color: #7d6f5e;
   }
 
-  .pf-timer-bar-wrap.urgent {
-    background: #fff5f5;
-    border-color: #f5c6c6;
-    color: #b83232;
-  }
+  .pf-timer-bar-wrap.urgent { background: #fff5f5; border-color: #f5c6c6; color: #b83232; }
 
-  .pf-timer-track {
-    flex: 1;
-    height: 4px;
-    background: #e6ddd1;
-    border-radius: 999px;
-    overflow: hidden;
-  }
+  .pf-timer-track { flex: 1; height: 4px; background: #e6ddd1; border-radius: 999px; overflow: hidden; }
 
   .pf-timer-fill {
     height: 100%;
@@ -236,6 +199,18 @@ const styles = `
   }
 
   .pf-timer-fill.urgent { background: #e05252; }
+
+  .pf-session-ref {
+    font-size: 0.78rem;
+    color: #a29789;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #f8f4ee;
+    border: 1px solid #ece0d0;
+    border-radius: 10px;
+  }
 
   .pf-initializing {
     display: flex;
@@ -331,7 +306,16 @@ const styles = `
 
 const TIMER_SECONDS = 300;
 
-export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess }) {
+export default function PaymentForm({
+  amount = 5000,
+  currency = "sgd",
+  bookingActivity = null,
+  bookingSlot = null,
+  foodItems = [],
+  onSuccess,
+}) {
+  const { user } = useAuth();
+
   const [cardNumber, setCardNumber] = useState("");
   const [expiry, setExpiry] = useState("");
   const [cvc, setCvc] = useState("");
@@ -348,7 +332,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
   const finalAmount = voucher ? voucher.finalAmount : amount;
   const saving = voucher ? voucher.saving : 0;
 
-  // On mount: create PaymentIntent + start timer immediately
+  // On mount: create PaymentIntent + start timer
   useEffect(() => {
     const init = async () => {
       try {
@@ -368,10 +352,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
 
     timerRef.current = setInterval(() => {
       setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(timerRef.current); return 0; }
         return prev - 1;
       });
     }, 1000);
@@ -379,7 +360,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
     return () => clearInterval(timerRef.current);
   }, []);
 
-  // When timer hits 0 — auto cancel
+  // Auto-cancel when timer hits 0
   useEffect(() => {
     if (secondsLeft === 0 && paymentIntentId && !success) {
       setExpired(true);
@@ -410,26 +391,39 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
       setError("Please fill in all card details.");
       return;
     }
+
     setLoading(true);
     setError("");
 
     try {
-      const result = await processPayment({
-        Amount: amount,
-        Currency: currency.toLowerCase(),
-        PaymentMethod: "pm_card_visa",
-        VoucherCode: voucher?.code || "",
+      // Call composite /booking endpoint — it handles payment + booking creation
+      const res = await apiClient.post("/booking", {
+        user_name: user?.username || "guest",
+        user_email: user?.email || `${user?.username || "guest"}@example.com`,
+        activity_id: bookingActivity?.id,
+        start_time: bookingSlot?.start,
+        end_time: bookingSlot?.end,
+        food_items: foodItems,
+        payment_method: "card",
+        voucher_code: voucher?.code || "",
       });
 
-      if (result.Success) {
+      const result = res.data;
+
+      if (result.success && result.payment?.Success) {
         clearInterval(timerRef.current);
         setSuccess(result);
         onSuccess?.(result);
       } else {
-        setError(result.ErrorMessage || "Payment failed. Please try again.");
+        setError(result.payment?.ErrorMessage || "Payment failed. Please try again.");
       }
     } catch (err) {
-      setError(err.message || "Payment failed. Please try again.");
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "object") {
+        setError(detail?.message || "Payment failed. Please try again.");
+      } else {
+        setError(detail || err.message || "Payment failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -441,14 +435,16 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
         <style>{styles}</style>
         <div className="pf-success">
           <div className="pf-success-icon">🎨</div>
-          <h3 className="pf-success-title">Payment Successful!</h3>
+          <h3 className="pf-success-title">Booking Confirmed!</h3>
           <p style={{ color: "#4a7c4a", fontSize: "0.92rem", margin: 0 }}>
-            Your booking is confirmed. See you at the studio!
+            Your booking is confirmed. A confirmation email has been sent. See you at the studio!
           </p>
-          <span className="pf-success-id">{success.PaymentIntentId}</span>
+          <span className="pf-success-id">
+            {success.payment?.PaymentIntentId || success.booking?.booking?.id}
+          </span>
           <div style={{ fontSize: "0.88rem", color: "#4a7c4a" }}>
             Amount charged:{" "}
-            <strong>${(success.FinalAmount / 100).toFixed(2)} {currency.toUpperCase()}</strong>
+            <strong>${(success.total_amount || amount / 100).toFixed(2)} {currency.toUpperCase()}</strong>
             {saving > 0 && <span style={{ marginLeft: 8 }}>· Saved ${(saving / 100).toFixed(2)}</span>}
           </div>
         </div>
@@ -464,8 +460,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
           <div className="pf-expired-icon">⏱️</div>
           <h3 className="pf-expired-title">Session Expired</h3>
           <p style={{ color: "#7a1a1a", fontSize: "0.92rem", margin: 0 }}>
-            Your payment session has expired and the payment has been cancelled.
-            Please start a new session.
+            Your payment session has expired and has been cancelled. Please start a new session.
           </p>
           <button className="pf-refresh-btn" onClick={() => window.location.reload()}>
             Start New Session
@@ -484,6 +479,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
           <div className="pf-divider" />
         </div>
 
+        {/* Amount display */}
         <div className="pf-amount-display">
           <div>
             <div className="pf-amount-label">Total Due</div>
@@ -500,20 +496,26 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
           )}
         </div>
 
-        {/* Timer — always visible from page load */}
+        {/* Timer */}
         <div className={`pf-timer-bar-wrap ${isUrgent ? "urgent" : ""}`}>
           <span>{isUrgent ? "⚠️" : "⏱"}</span>
           <span>
             {initializing ? "Starting session..." : `Session expires in ${formatTime(secondsLeft)}`}
           </span>
           <div className="pf-timer-track">
-            <div
-              className={`pf-timer-fill ${isUrgent ? "urgent" : ""}`}
-              style={{ width: `${timerPct}%` }}
-            />
+            <div className={`pf-timer-fill ${isUrgent ? "urgent" : ""}`} style={{ width: `${timerPct}%` }} />
           </div>
         </div>
 
+        {/* Session reference */}
+        {!initializing && paymentIntentId && (
+          <div className="pf-session-ref">
+            <span>🔖</span>
+            <span>Session ref: <strong style={{ color: "#7d6f5e" }}>{paymentIntentId}</strong></span>
+          </div>
+        )}
+
+        {/* Voucher */}
         <VoucherInput originalAmount={amount} onVoucherApplied={(v) => setVoucher(v)} />
 
         <div className="pf-separator" />
@@ -575,7 +577,7 @@ export default function PaymentForm({ amount = 5000, currency = "sgd", onSuccess
               </div>
               {saving > 0 && (
                 <div className="pf-summary-row discount">
-                  <span>Voucher discount ({voucher?.code})</span>
+                  <span>Voucher ({voucher?.code})</span>
                   <span>−${(saving / 100).toFixed(2)}</span>
                 </div>
               )}

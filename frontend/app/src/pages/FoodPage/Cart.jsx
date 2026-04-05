@@ -53,6 +53,12 @@ export default function Cart() {
     );
   };
 
+  const handleProceedToPayment = () => {
+    navigate("/payment", {
+      state: { bookingActivity, bookingSlot, orders, totalPrice },
+    });
+  };
+
   if (loading)
     return (
       <>
@@ -97,10 +103,7 @@ export default function Cart() {
                 {bookingSlot && (
                   <div>
                     <p className="cart-booking-field-label">Time Slot</p>
-                    <p
-                      className="cart-booking-field-value"
-                      style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.95rem" }}
-                    >
+                    <p className="cart-booking-field-value" style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.95rem" }}>
                       {new Date(bookingSlot.start).toLocaleString()} —{" "}
                       {new Date(bookingSlot.end).toLocaleString()}
                     </p>
@@ -131,23 +134,19 @@ export default function Cart() {
               {/* Order Items */}
               <div className="cart-items">
                 {orders.length === 0 ? (
-                  <div
-                    style={{
-                      padding: "32px",
-                      textAlign: "center",
-                      background: "var(--surface)",
-                      border: "1px dashed var(--line)",
-                      borderRadius: "20px",
-                      color: "var(--muted)",
-                      fontSize: "0.95rem",
-                    }}
-                  >
+                  <div style={{
+                    padding: "32px",
+                    textAlign: "center",
+                    background: "var(--surface)",
+                    border: "1px dashed var(--line)",
+                    borderRadius: "20px",
+                    color: "var(--muted)",
+                    fontSize: "0.95rem",
+                  }}>
                     No food added yet.{" "}
                     <span
                       style={{ color: "var(--accent-deep)", cursor: "pointer", fontWeight: 600 }}
-                      onClick={() =>
-                        navigate("/menu", { state: { bookingActivity, bookingSlot } })
-                      }
+                      onClick={() => navigate("/menu", { state: { bookingActivity, bookingSlot } })}
                     >
                       Browse menu →
                     </span>
@@ -165,31 +164,12 @@ export default function Cart() {
                       </div>
                       <div className="cart-item-controls">
                         <div className="cart-qty-wrap">
-                          <button
-                            className="cart-qty-btn"
-                            onClick={() =>
-                              handleUpdateQuantity(item.order_id, item.quantity - 1)
-                            }
-                          >
-                            -
-                          </button>
+                          <button className="cart-qty-btn" onClick={() => handleUpdateQuantity(item.order_id, item.quantity - 1)}>−</button>
                           <span className="cart-qty-val">{item.quantity}</span>
-                          <button
-                            className="cart-qty-btn"
-                            onClick={() =>
-                              handleUpdateQuantity(item.order_id, item.quantity + 1)
-                            }
-                          >
-                            +
-                          </button>
+                          <button className="cart-qty-btn" onClick={() => handleUpdateQuantity(item.order_id, item.quantity + 1)}>+</button>
                         </div>
-                        <span className="cart-item-subtotal">
-                          ${(item.price * item.quantity).toFixed(2)}
-                        </span>
-                        <button
-                          className="cart-remove-btn"
-                          onClick={() => handleDelete(item.order_id)}
-                        >
+                        <span className="cart-item-subtotal">${(item.price * item.quantity).toFixed(2)}</span>
+                        <button className="cart-remove-btn" onClick={() => handleDelete(item.order_id)}>
                           Remove
                         </button>
                       </div>
@@ -211,12 +191,8 @@ export default function Cart() {
 
                 {orders.map((item) => (
                   <div key={item.order_id} className="cart-summary-row">
-                    <span className="cart-summary-row-name">
-                      {item.name} ×{item.quantity}
-                    </span>
-                    <span className="cart-summary-row-price">
-                      ${(item.price * item.quantity).toFixed(2)}
-                    </span>
+                    <span className="cart-summary-row-name">{item.name} ×{item.quantity}</span>
+                    <span className="cart-summary-row-price">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
 
@@ -227,23 +203,14 @@ export default function Cart() {
                   <span className="cart-summary-total-price">${totalPrice.toFixed(2)}</span>
                 </div>
 
-                <button
-                  className="cart-pay-btn"
-                  onClick={() =>
-                    navigate("/payment", {
-                      state: { bookingActivity, bookingSlot, orders, totalPrice },
-                    })
-                  }
-                >
+                <button className="cart-place-btn" onClick={handleProceedToPayment}>
                   Proceed to Payment →
                 </button>
 
                 <button
                   className="cart-back-btn"
-                  style={{ width: "100%", justifyContent: "center" }}
-                  onClick={() =>
-                    navigate("/menu", { state: { bookingActivity, bookingSlot } })
-                  }
+                  style={{ width: "100%", justifyContent: "center", marginTop: "8px" }}
+                  onClick={() => navigate("/menu", { state: { bookingActivity, bookingSlot } })}
                 >
                   + Add More Food
                 </button>
@@ -255,7 +222,6 @@ export default function Cart() {
     </>
   );
 }
-
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -291,18 +257,14 @@ const styles = `
     gap: 16px;
   }
 
-  .cart-hero-left {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
   .cart-eyebrow {
     font-size: 0.74rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--accent-deep);
     font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
   }
 
   .cart-title {
@@ -326,6 +288,10 @@ const styles = `
     font-size: 0.88rem;
     white-space: nowrap;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
   }
 
   .cart-back-btn:hover {
@@ -334,7 +300,48 @@ const styles = `
     border-color: var(--text);
   }
 
-  /* Empty state */
+  .cart-booking-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 22px 26px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(36,28,23,0.05);
+  }
+
+  .cart-booking-label {
+    font-size: 0.74rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent-deep);
+    font-weight: 700;
+    display: block;
+    margin-bottom: 14px;
+  }
+
+  .cart-booking-row {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .cart-booking-field-label {
+    font-size: 0.76rem;
+    color: var(--muted);
+    margin: 0 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+
+  .cart-booking-field-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    color: var(--text);
+    font-weight: 600;
+    margin: 0;
+  }
+
   .cart-empty {
     text-align: center;
     padding: 80px 20px;
@@ -344,10 +351,7 @@ const styles = `
     color: var(--muted);
   }
 
-  .cart-empty-icon {
-    font-size: 3.5rem;
-    margin-bottom: 16px;
-  }
+  .cart-empty-icon { font-size: 3.5rem; margin-bottom: 16px; }
 
   .cart-empty-text {
     font-size: 1.1rem;
@@ -377,7 +381,6 @@ const styles = `
     transform: translateY(-1px);
   }
 
-  /* Main grid */
   .cart-grid {
     display: grid;
     grid-template-columns: 1fr 380px;
@@ -385,7 +388,6 @@ const styles = `
     align-items: start;
   }
 
-  /* Order items */
   .cart-items {
     display: flex;
     flex-direction: column;
@@ -418,12 +420,6 @@ const styles = `
     display: block;
   }
 
-  .cart-item-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
   .cart-item-name {
     font-family: 'Playfair Display', serif;
     font-size: 1.1rem;
@@ -453,10 +449,7 @@ const styles = `
     gap: 10px;
   }
 
-  .cart-qty-wrap {
-    display: flex;
-    align-items: center;
-  }
+  .cart-qty-wrap { display: flex; align-items: center; }
 
   .cart-qty-btn {
     width: 34px;
@@ -515,11 +508,8 @@ const styles = `
     transition: color 0.2s;
   }
 
-  .cart-remove-btn:hover {
-    color: #a03030;
-  }
+  .cart-remove-btn:hover { color: #a03030; }
 
-  /* Summary */
   .cart-summary {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -528,6 +518,9 @@ const styles = `
     position: sticky;
     top: 24px;
     box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
   }
 
   .cart-summary-title {
@@ -546,14 +539,8 @@ const styles = `
     font-size: 0.92rem;
   }
 
-  .cart-summary-row-name {
-    color: var(--muted);
-  }
-
-  .cart-summary-row-price {
-    color: var(--text);
-    font-weight: 500;
-  }
+  .cart-summary-row-name { color: var(--muted); }
+  .cart-summary-row-price { color: var(--text); font-weight: 500; }
 
   .cart-summary-divider {
     height: 1px;
@@ -565,14 +552,10 @@ const styles = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
 
-  .cart-summary-total-label {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text);
-  }
+  .cart-summary-total-label { font-size: 1rem; font-weight: 600; color: var(--text); }
 
   .cart-summary-total-price {
     font-family: 'Playfair Display', serif;
