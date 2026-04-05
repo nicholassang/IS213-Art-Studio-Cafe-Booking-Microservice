@@ -312,6 +312,7 @@ export default function PaymentForm({
   bookingActivity = null,
   bookingSlot = null,
   foodItems = [],
+  onVoucherApplied,
   onSuccess,
 }) {
   const { user } = useAuth();
@@ -444,7 +445,7 @@ export default function PaymentForm({
           </span>
           <div style={{ fontSize: "0.88rem", color: "#4a7c4a" }}>
             Amount charged:{" "}
-            <strong>${(success.total_amount || amount / 100).toFixed(2)} {currency.toUpperCase()}</strong>
+            <strong>${(success.total_amount).toFixed(2)} {currency.toUpperCase()}</strong>
             {saving > 0 && <span style={{ marginLeft: 8 }}>· Saved ${(saving / 100).toFixed(2)}</span>}
           </div>
         </div>
@@ -516,7 +517,7 @@ export default function PaymentForm({
         )}
 
         {/* Voucher */}
-        <VoucherInput originalAmount={amount} onVoucherApplied={(v) => setVoucher(v)} />
+        <VoucherInput originalAmount={amount} onVoucherApplied={(v) => { setVoucher(v); onVoucherApplied?.(v); }} />
 
         <div className="pf-separator" />
 
