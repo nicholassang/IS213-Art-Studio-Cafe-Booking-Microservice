@@ -24,7 +24,7 @@ export default function BookingPage() {
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  //define firstBookableDate
+  // firstBookableDate
   const firstBookableDate = getFirstBookableDate();
 
   const saveActivity = (activity) => {
@@ -92,6 +92,21 @@ export default function BookingPage() {
     } finally {
       setLoadingAvailability(false);
     }
+  };
+
+  // clear manual food orders before going to menu
+  const handleAddFood = async () => {
+    try {
+      const res = await apiClient.get("/food-order/all");
+      const orders = res.data.orders ?? [];
+      const manualOrders = orders.filter(o => !o.comment?.startsWith("booking:"));
+      for (const order of manualOrders) {
+        await apiClient.delete(`/food-order/${order.order_id}`);
+      }
+    } catch (err) {
+      console.error("Could not clear orders:", err);
+    }
+    navigate("/menu", { state: bookingState });
   };
 
   const bookingState = {
@@ -206,11 +221,11 @@ export default function BookingPage() {
                   )}
                 </div>
 
-                {/* ✅ Two action buttons */}
+                {/* Two action buttons */}
                 <div className="bp-btn-row">
                   <button
                     className="bp-btn bp-btn-primary"
-                    onClick={() => navigate("/menu", { state: bookingState })}
+                    onClick={handleAddFood}  // clear old order first
                     disabled={isDisabled}
                   >
                     🍽️ Add Food
@@ -233,7 +248,7 @@ export default function BookingPage() {
               <p className="bp-sub-hint">Choose a 2-hour slot from tomorrow onward.</p>
 
               <div className="bp-chip-row">
-                {["2-hour sessions", "From tomorrow onward", "8AM-8PM", "Limited slots"].map(item => (
+                {["2-hour sessions", "From tomorrow onward", "8AM–8PM", "Limited slots"].map(item => (
                   <span key={item} className="bp-chip">{item}</span>
                 ))}
               </div>
@@ -251,7 +266,7 @@ export default function BookingPage() {
                     selectable={true}
                     selectMirror={true}
                     editable={false}
-                    validRange={{ start: firstBookableDate }}  
+                    validRange={{ start: firstBookableDate }}
                     select={handleSlotSelect}
                     selectAllow={(info) => isFutureDaySlotSelection(info, TWO_HOUR_MS)}
                     events={selectedSlot ? [{
@@ -363,10 +378,8 @@ const styles = `
 
   .bp-activity-display { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
   .bp-activity-display-column { flex-direction: column; align-items: flex-start; }
-
   .bp-activity-img { width: 140px; height: 100px; object-fit: cover; border-radius: 14px; border: 1px solid var(--line); }
   .bp-activity-img-large { width: 100%; height: 180px; }
-
   .bp-activity-info h3 { font-family: 'Playfair Display', serif; font-size: 1.2rem; margin: 0 0 6px; color: var(--text); }
   .bp-activity-info p { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
 
@@ -376,7 +389,6 @@ const styles = `
     color: var(--text); cursor: pointer; font-size: 0.85rem;
     font-family: 'DM Sans', sans-serif; font-weight: 500; transition: all 0.2s ease;
   }
-
   .bp-activity-pick-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
 
   .bp-status {
@@ -390,7 +402,6 @@ const styles = `
     border-radius: 14px; background: var(--surface-2);
     border: 1px solid var(--line); font-size: 0.93rem; line-height: 1.7;
   }
-
   .bp-slot-info p { margin: 0 0 6px; }
   .bp-slot-info p:last-child { margin: 0; }
   .bp-slot-open { color: var(--accent-deep); font-weight: 700; }

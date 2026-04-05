@@ -28,17 +28,16 @@ export default function Cart() {
   const totalPrice = foodTotal + activityPrice;
 
   useEffect(() => {
-    apiClient
-      .get("/food-order/all")
-      .then((res) => {
-        setOrders(res.data.orders ?? []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Fetch error:", err);
-        setLoading(false);
-      });
-  }, []);
+  apiClient.get("/food-order/all")
+    .then(res => {
+      const allOrders = res.data.orders ?? [];
+      // only show the manual order
+      const manualOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+      setOrders(manualOrders);
+      setLoading(false);
+    })
+    .catch(err => { console.error("Fetch error:", err); setLoading(false); });
+}, []);
 
   const handleDelete = async (order_id) => {
     await apiClient.delete(`/food-order/${order_id}`);
@@ -285,7 +284,7 @@ export default function Cart() {
                 {orders.map((item) => (
                   <div key={item.order_id} className="cart-summary-row">
                     <span className="cart-summary-row-name">
-                      {item.name} ×{item.quantity}
+                      {item.name}×{item.quantity}
                     </span>
                     <span className="cart-summary-row-price">
                       ${(item.price * item.quantity).toFixed(2)}
