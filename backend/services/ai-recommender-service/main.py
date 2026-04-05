@@ -1,39 +1,48 @@
 import logging
 import os
+from importlib import import_module
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from psycopg import connect
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from prompts import SCORING_SYSTEM_PROMPT, build_profile_system_prompt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
 AI_WRAPPER_URL = os.getenv("AI_WRAPPER_URL", "http://ai-recommendation-wrapper:8000")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
+storage_backend = None
 supabase_client = None
-if SUPABASE_URL and SUPABASE_KEY:
-    from supabase import create_client
-    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
+if DATABASE_URL:
+    storage_backend = "postgres"
+    logger.info("AI recommender service configured to use Postgres result storage")
+elif SUPABASE_URL and SUPABASE_KEY:
+    try:
+        create_client = import_module("supabase").create_client
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        storage_backend = "supabase"
+        logger.info("AI recommender service configured to use Supabase result storage")
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase client: {e}")
+else:
+    logger.warning("AI recommender result storage not configured")
+
 app = FastAPI(
     title="AI Recommender Service",
     description="Orchestrates AI scoring, profiling, and recommendation storage.",
     version="1.0.0",
 )
 
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
+
 class QuizAnswer(BaseModel):
     question_id: str
     question_text: str
@@ -67,12 +76,63 @@ class ProfileResult(BaseModel):
     closing: str
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _require_supabase():
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
+def _connect_db():
+    return connect(DATABASE_URL, row_factory=dict_row)
+
+
+def _ensure_postgres_schema() -> None:
+    if storage_backend != "postgres":
+        return
+
+    with _connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS quiz_results (
+                    id BIGSERIAL PRIMARY KEY,
+                    submission_id text NOT NULL UNIQUE,
+                    user_id text NOT NULL,
+                    answers jsonb NOT NULL,
+                    solo_social_score integer NOT NULL,
+                    structured_freeform_score integer NOT NULL,
+                    scoring_reasoning text,
+                    personality_type text NOT NULL,
+                    recommendations jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    food_recommendations jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    food_recommendation_details jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    drink_recommendation text NOT NULL DEFAULT '',
+                    drink_recommendation_details jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    profile_title text,
+                    profile_body text,
+                    activity_explanations jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    closing text,
+                    confidence_score double precision,
+                    submitted_at text,
+                    created_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quiz_results_user_id ON quiz_results (user_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quiz_results_submission_id ON quiz_results (submission_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quiz_results_personality_type ON quiz_results (personality_type)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quiz_results_submitted_at ON quiz_results (submitted_at)"
+            )
+        conn.commit()
+
+
+def _require_storage():
+    if storage_backend == "postgres":
+        return
+    if storage_backend == "supabase" and supabase_client:
+        return
+    raise HTTPException(status_code=503, detail="Results storage not configured")
 
 
 def _supabase_fetch(description: str, query, allow_empty: bool = False):
@@ -88,18 +148,39 @@ def _supabase_fetch(description: str, query, allow_empty: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _postgres_fetch_one(query: str, params: tuple = ()):
+    try:
+        with _connect_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                return cur.fetchone()
+    except Exception as e:
+        logger.error(f"Failed Postgres query: {e}")
+        raise HTTPException(status_code=500, detail="Failed to query stored results")
+
+
+def _postgres_fetch_all(query: str, params: tuple = ()):
+    try:
+        with _connect_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                return cur.fetchall()
+    except Exception as e:
+        logger.error(f"Failed Postgres query: {e}")
+        raise HTTPException(status_code=500, detail="Failed to query stored results")
+
+
 def _map_scores(solo_social: int, structured_freeform: int) -> str:
     social = solo_social >= 5
     freeform = structured_freeform >= 5
 
     if social and not freeform:
         return "Workshop Goer"
-    elif social and freeform:
+    if social and freeform:
         return "Free Spirit"
-    elif not social and not freeform:
+    if not social and not freeform:
         return "Craftsman"
-    else:
-        return "Dreamer"
+    return "Dreamer"
 
 
 def _compute_confidence(
@@ -113,7 +194,7 @@ def _compute_confidence(
 
     answer_quality = 0.0
     if answers:
-        avg_len = sum(len(a.answer_text.strip()) for a in answers) / len(answers)
+        avg_len = sum(len(answer.answer_text.strip()) for answer in answers) / len(answers)
         answer_quality = min(avg_len / 100.0, 1.0) * 0.40
 
     return round(0.40 + score_confidence + answer_quality, 2)
@@ -122,14 +203,14 @@ def _compute_confidence(
 def _extract_recommendations(profile: ProfileResult) -> list[str]:
     return [
         item["activity"]
-        for item in sorted(profile.activity_explanations, key=lambda x: x["rank"])
+        for item in sorted(profile.activity_explanations, key=lambda item: item["rank"])
     ]
 
 
 def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
     return [
         item["food"]
-        for item in sorted(profile.food_recommendations, key=lambda x: x["rank"])
+        for item in sorted(profile.food_recommendations, key=lambda item: item["rank"])
     ]
 
 
@@ -186,23 +267,39 @@ def _build_response(
     }
 
 
-# ---------------------------------------------------------------------------
-# AI wrapper calls
-# ---------------------------------------------------------------------------
+def _stored_result_to_response(stored: dict) -> dict:
+    return _build_response(
+        submission_id=stored["submission_id"],
+        personality_type=stored["personality_type"],
+        scores=stored,
+        profile=stored,
+        recommendations=stored.get("recommendations", []),
+        food_recommendations=stored.get("food_recommendations", []),
+        food_recommendation_details=stored.get("food_recommendation_details", []),
+        drink_recommendation=stored.get("drink_recommendation", ""),
+        drink_recommendation_details=stored.get("drink_recommendation_details", {}),
+        confidence=stored.get("confidence_score") or 0,
+    )
+
+
+@app.on_event("startup")
+async def startup_event():
+    if storage_backend == "postgres":
+        _ensure_postgres_schema()
+
+
 async def call_ai_score(answers: list[QuizAnswer]) -> ScoringResult:
-    """Call the AI wrapper to score answers."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{AI_WRAPPER_URL}/score",
             json={
-                "answers": [a.model_dump() for a in answers],
+                "answers": [answer.model_dump() for answer in answers],
                 "system_prompt": SCORING_SYSTEM_PROMPT,
             },
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        data = resp.json()
-        return ScoringResult(**data)
+        return ScoringResult(**resp.json())
 
 
 async def call_ai_profile(
@@ -216,7 +313,6 @@ async def call_ai_profile(
     disliked_food: list[str] | None = None,
     disliked_drinks: list[str] | None = None,
 ) -> ProfileResult:
-    """Call the AI wrapper to generate a profile."""
     system_prompt = build_profile_system_prompt(
         personality_type,
         scores.model_dump(),
@@ -229,7 +325,7 @@ async def call_ai_profile(
     )
 
     payload = {
-        "answers": [a.model_dump() for a in answers],
+        "answers": [answer.model_dump() for answer in answers],
         "scores": scores.model_dump(),
         "personality_type": personality_type,
         "activities": activities,
@@ -242,19 +338,12 @@ async def call_ai_profile(
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{AI_WRAPPER_URL}/profile",
-            json=payload,
-        )
+        resp = await client.post(f"{AI_WRAPPER_URL}/profile", json=payload)
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        data = resp.json()
-        return ProfileResult(**data)
+        return ProfileResult(**resp.json())
 
 
-# ---------------------------------------------------------------------------
-# Supabase storage
-# ---------------------------------------------------------------------------
 async def store_result(
     submission_id: str,
     user_id: str,
@@ -270,14 +359,82 @@ async def store_result(
     confidence: float,
     submitted_at: str | None = None,
 ) -> None:
+    if storage_backend == "postgres":
+        try:
+            with _connect_db() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO quiz_results (
+                            submission_id, user_id, answers, solo_social_score,
+                            structured_freeform_score, scoring_reasoning, personality_type,
+                            recommendations, food_recommendations, food_recommendation_details,
+                            drink_recommendation, drink_recommendation_details, profile_title,
+                            profile_body, activity_explanations, closing, confidence_score,
+                            submitted_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s
+                        )
+                        ON CONFLICT (submission_id) DO UPDATE SET
+                            user_id = EXCLUDED.user_id,
+                            answers = EXCLUDED.answers,
+                            solo_social_score = EXCLUDED.solo_social_score,
+                            structured_freeform_score = EXCLUDED.structured_freeform_score,
+                            scoring_reasoning = EXCLUDED.scoring_reasoning,
+                            personality_type = EXCLUDED.personality_type,
+                            recommendations = EXCLUDED.recommendations,
+                            food_recommendations = EXCLUDED.food_recommendations,
+                            food_recommendation_details = EXCLUDED.food_recommendation_details,
+                            drink_recommendation = EXCLUDED.drink_recommendation,
+                            drink_recommendation_details = EXCLUDED.drink_recommendation_details,
+                            profile_title = EXCLUDED.profile_title,
+                            profile_body = EXCLUDED.profile_body,
+                            activity_explanations = EXCLUDED.activity_explanations,
+                            closing = EXCLUDED.closing,
+                            confidence_score = EXCLUDED.confidence_score,
+                            submitted_at = EXCLUDED.submitted_at
+                        """,
+                        (
+                            submission_id,
+                            user_id,
+                            Jsonb([answer.model_dump() for answer in answers]),
+                            scores.solo_social_score,
+                            scores.structured_freeform_score,
+                            scores.reasoning,
+                            personality_type,
+                            Jsonb(recommendations),
+                            Jsonb(food_recommendations),
+                            Jsonb(food_recommendation_details),
+                            drink_recommendation,
+                            Jsonb(drink_recommendation_details),
+                            profile.profile_title,
+                            profile.profile_body,
+                            Jsonb(profile.activity_explanations),
+                            profile.closing,
+                            confidence,
+                            submitted_at,
+                        ),
+                    )
+                conn.commit()
+            logger.info(f"Stored result for {submission_id} in Postgres")
+        except Exception as e:
+            logger.error(f"Failed to store result for {submission_id} in Postgres: {e}")
+        return
+
     if not supabase_client:
-        logger.warning("Supabase not configured — skipping storage")
+        logger.warning("Results storage not configured — skipping storage")
         return
 
     record = {
         "submission_id": submission_id,
         "user_id": user_id,
-        "answers": [a.model_dump() for a in answers],
+        "answers": [answer.model_dump() for answer in answers],
         "solo_social_score": scores.solo_social_score,
         "structured_freeform_score": scores.structured_freeform_score,
         "scoring_reasoning": scores.reasoning,
@@ -298,67 +455,59 @@ async def store_result(
     try:
         result = supabase_client.table("quiz_results").insert(record).execute()
         if result.data:
-            logger.info(f"Stored result for {submission_id} (confidence: {confidence})")
+            logger.info(f"Stored result for {submission_id} in Supabase")
         else:
             logger.warning(f"Supabase returned empty for {submission_id}")
     except Exception as e:
         logger.error(f"Failed to store result for {submission_id}: {e}")
-        minimal_fields = [
-            "submission_id", "user_id", "answers",
-            "solo_social_score", "structured_freeform_score",
-            "personality_type", "recommendations",
-        ]
-        minimal_record = {k: record[k] for k in minimal_fields if k in record}
-        try:
-            supabase_client.table("quiz_results").insert(minimal_record).execute()
-            logger.info(f"Stored minimal result for {submission_id}")
-        except Exception as e2:
-            logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
 
 
-# ---------------------------------------------------------------------------
-# Main endpoint
-# ---------------------------------------------------------------------------
+def _fetch_existing_result(submission_id: str) -> dict | None:
+    if storage_backend == "postgres":
+        return _postgres_fetch_one(
+            "SELECT * FROM quiz_results WHERE submission_id = %s LIMIT 1",
+            (submission_id,),
+        )
+
+    if not supabase_client:
+        return None
+
+    existing = (
+        supabase_client.table("quiz_results")
+        .select("*")
+        .eq("submission_id", submission_id)
+        .execute()
+    )
+    return existing.data[0] if existing.data else None
+
+
 @app.post("/recommend")
 async def recommend(request: RecommendRequest):
     logger.info(f"Processing recommendation for submission {request.submission_id}")
 
-    # Idempotency guard
-    if supabase_client:
-        try:
-            existing = (
-                supabase_client.table("quiz_results")
-                .select("*")
-                .eq("submission_id", request.submission_id)
-                .execute()
-            )
-            if existing.data:
-                logger.info(f"Result already exists for {request.submission_id}, returning stored result")
-                stored = existing.data[0]
-                return _build_response(
-                    submission_id=stored["submission_id"],
-                    personality_type=stored["personality_type"],
-                    scores=stored,
-                    profile=stored,
-                    recommendations=stored["recommendations"],
-                    food_recommendations=stored.get("food_recommendations", []),
-                    food_recommendation_details=stored.get("food_recommendation_details", []),
-                    drink_recommendation=stored.get("drink_recommendation", ""),
-                    drink_recommendation_details=stored.get("drink_recommendation_details", {}),
-                    confidence=stored["confidence_score"],
-                )
-        except Exception as e:
-            logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
+    try:
+        existing = _fetch_existing_result(request.submission_id)
+        if existing:
+            logger.info(f"Result already exists for {request.submission_id}, returning stored result")
+            return _stored_result_to_response(existing)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
 
     try:
         scores = await call_ai_score(request.answers)
         personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
+        confidence = _compute_confidence(
+            scores.solo_social_score,
+            scores.structured_freeform_score,
+            request.answers,
+        )
+
         logger.info(
             f"Scored: Solo↔Social={scores.solo_social_score}, "
             f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
         )
-
-        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
 
         if confidence < 0.50:
             low_conf_profile = ProfileResult(
@@ -370,7 +519,7 @@ async def recommend(request: RecommendRequest):
                 activity_explanations=[],
                 food_recommendations=[],
                 drink_recommendation={"drink": "", "explanation": ""},
-                closing="Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
+                closing="Take your time, share a bit more about yourself, and we'll find something perfect for you."
             )
 
             if request.is_authenticated:
@@ -415,13 +564,6 @@ async def recommend(request: RecommendRequest):
         food_recommendations = _extract_food_recommendations(profile)
         drink_recommendation = profile.drink_recommendation.get("drink", "")
 
-        logger.info(
-            f"Profile generated: {profile.profile_title} | "
-            f"Activities: {recommendations} | "
-            f"Food: {food_recommendations} | "
-            f"Drink: {drink_recommendation}"
-        )
-
         if request.is_authenticated:
             await store_result(
                 request.submission_id,
@@ -451,19 +593,24 @@ async def recommend(request: RecommendRequest):
             drink_recommendation_details=profile.drink_recommendation,
             confidence=confidence,
         )
-
     except Exception as e:
         logger.error(f"Failed to generate recommendation for {request.submission_id}: {e}")
         raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
 
 
-# ---------------------------------------------------------------------------
-# Result retrieval
-# ---------------------------------------------------------------------------
 @app.get("/quiz/results/{submission_id}")
 async def get_quiz_results(submission_id: str):
-    if not supabase_client:
-        raise HTTPException(status_code=404, detail="Results storage not configured")
+    _require_storage()
+
+    if storage_backend == "postgres":
+        result = _postgres_fetch_one(
+            "SELECT * FROM quiz_results WHERE submission_id = %s LIMIT 1",
+            (submission_id,),
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Results not found")
+        return result
+
     result = _supabase_fetch(
         f"fetch results for {submission_id}",
         supabase_client.table("quiz_results").select("*").eq("submission_id", submission_id),
@@ -473,8 +620,21 @@ async def get_quiz_results(submission_id: str):
 
 @app.get("/quiz/user-results")
 async def get_user_results(user_id: str):
+    if storage_backend == "postgres":
+        rows = _postgres_fetch_all(
+            """
+            SELECT submission_id, personality_type, confidence_score, submitted_at
+            FROM quiz_results
+            WHERE user_id = %s
+            ORDER BY COALESCE(submitted_at, '') DESC, submission_id DESC
+            """,
+            (user_id,),
+        )
+        return {"results": rows}
+
     if not supabase_client:
         return {"results": []}
+
     result = _supabase_fetch(
         f"fetch results for user {user_id}",
         supabase_client.table("quiz_results")
@@ -486,12 +646,10 @@ async def get_user_results(user_id: str):
     return {"results": result}
 
 
-# ---------------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():
     issues = []
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{AI_WRAPPER_URL}/health")
@@ -499,6 +657,14 @@ async def health_check():
                 issues.append(f"AI wrapper unhealthy: {resp.status_code}")
     except Exception as e:
         issues.append(f"AI wrapper unreachable: {e}")
+
+    if storage_backend == "postgres":
+        try:
+            _postgres_fetch_one("SELECT 1")
+        except HTTPException as e:
+            issues.append(str(e.detail))
+    elif storage_backend is None:
+        issues.append("Results storage not configured")
 
     if issues:
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "issues": issues})

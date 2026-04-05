@@ -175,8 +175,12 @@ services:
       - ./wrappers/ai-recommendation-wrapper/.env
     environment:
       - AI_WRAPPER_URL=http://ai-recommendation-wrapper:8000
+      - DATABASE_URL=postgresql://quiz_user:quiz_pass@quiz-db:5432/quiz_db
     depends_on:
-      - ai-recommendation-wrapper
+      quiz-db:
+        condition: service_healthy
+      ai-recommendation-wrapper:
+        condition: service_started
     ports:
       - "8015:8000"
 
