@@ -181,10 +181,8 @@ Primary routed paths:
 
 - `/register`, `/login`, `/profile`, `/logout` -> `user-service`
 - `/activities`, `/menu`, `/booking`, `/food-order` -> `make-booking-composite-service`
-- `/saved-activities`, `/saved-experiences` -> `activity-service`
+- `/bookings`, `/saved-activities`, `/saved-experiences` -> `activity-service`
 - `/quiz`, `/recommend` -> `ai-recommender-composite-service`
-
-The legacy FastAPI gateway still exists in the repo as `api-gateway-legacy`, but it is disabled by default and kept only for reference.
 
 ## Running the Project
 
@@ -305,7 +303,6 @@ backend/
     docker-compose.yaml
     kong/
         kong.yml
-    api-gateway/
     composite-service/
         ai-recommender-composite-service/
         make-booking-composite-service/
