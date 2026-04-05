@@ -257,6 +257,10 @@ export default function BookingPage() {
                 <div className="bp-cal-wrap">
                   <FullCalendar
                     plugins={[timeGridPlugin, interactionPlugin]}
+                    locale="en-gb"
+                    timeZone="Asia/Singapore"
+                    titleFormat={{ year: 'numeric', month: 'short', day: 'numeric' }} 
+                    dayHeaderFormat={{ weekday: 'short', day: 'numeric', month: 'short' }}
                     initialView="timeGridWeek"
                     allDaySlot={false}
                     slotMinTime="08:00:00"
