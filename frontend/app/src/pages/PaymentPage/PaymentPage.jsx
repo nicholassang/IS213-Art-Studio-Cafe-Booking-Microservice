@@ -221,6 +221,28 @@ export default function PaymentPage() {
   const [appliedVoucher, setAppliedVoucher] = useState(null);
   const displayTotal = appliedVoucher ? (appliedVoucher.finalAmount / 100) : totalPrice;
 
+  const formatBookingRange = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const dateText = startDate.toLocaleDateString("en-SG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+
+    const formatTime = (value) =>
+      value
+        .toLocaleTimeString("en-SG", {
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateText}, ${formatTime(startDate)} to ${formatTime(endDate)}`;
+  };
+
   // Format food items for composite service
   const foodItems = orders.map((o) => ({
     id: o.menu_item_id,
@@ -279,8 +301,7 @@ export default function PaymentPage() {
                   <div>
                     <div className="pay-booking-item-label">Date & Time</div>
                     <div className="pay-booking-item-value" style={{ fontSize: "0.9rem" }}>
-                      {new Date(bookingSlot.start).toLocaleString()} —{" "}
-                      {new Date(bookingSlot.end).toLocaleString()}
+                      {formatBookingRange(bookingSlot.start, bookingSlot.end)}
                     </div>
                   </div>
                 </div>
