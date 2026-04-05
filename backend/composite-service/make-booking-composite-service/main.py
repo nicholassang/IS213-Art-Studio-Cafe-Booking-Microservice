@@ -29,8 +29,27 @@ NOTIFICATION_URL = os.getenv("NOTIFICATION_URL", "http://notification-service:80
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 BOOKING_EVENTS_EXCHANGE = "booking.events"
 BOOKING_CONFIRMED_ROUTING_KEY = "booking.confirmed"
+PAYMENT_CURRENCY = os.getenv("PAYMENT_CURRENCY", "sgd")
+DEFAULT_PAYMENT_METHOD = os.getenv("DEFAULT_PAYMENT_METHOD", "pm_card_visa")
 
 logger = logging.getLogger(__name__)
+
+
+def to_minor_units(amount: float) -> int:
+    return max(1, int(round(amount * 100)))
+
+
+def normalize_payment_method(payment_method: Optional[str]) -> str:
+    if not payment_method:
+        return DEFAULT_PAYMENT_METHOD
+
+    normalized = payment_method.strip().lower()
+    generic_card_methods = {"card", "credit_card", "credit-card", "debit_card", "debit-card"}
+
+    if normalized in generic_card_methods:
+        return DEFAULT_PAYMENT_METHOD
+
+    return payment_method
 
 
 class FoodItem(BaseModel):
@@ -128,17 +147,30 @@ async def create_booking(payload: BookingRequest):
 
         # process payment via wrapper
         payment_resp = await client.post(
-            f"{PAYMENT_URL}/process-payment",
+            f"{PAYMENT_URL}/payment/process",
             json={
-                "amount": total_amount,
-                "currency": "USD",
-                "payment_method": payload.payment_method,
-                "description": f"Booking for {activity.get('name', payload.activity_id)}",
+                "Amount": to_minor_units(total_amount),
+                "Currency": PAYMENT_CURRENCY,
+                "PaymentMethod": normalize_payment_method(payload.payment_method),
+                "VoucherCode": "",
             },
         )
 
         if payment_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Payment service failed")
+            payment_error = None
+            try:
+                payment_error = payment_resp.json()
+            except ValueError:
+                payment_error = payment_resp.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Payment service failed",
+                    "downstream_status": payment_resp.status_code,
+                    "downstream_response": payment_error,
+                },
+            )
 
         payment = payment_resp.json()
 
@@ -165,16 +197,17 @@ async def create_booking(payload: BookingRequest):
             except ValueError:
                 error_body = booking_save_resp.text
 
-            # non-blocking fallback, still continue with booking success but warn
-            saved_booking = {
-                "warning": "Booking created but failed to persist in booking table",
-                "error": error_body,
-                "payload": booking_payload,
-            }
-        else:
-            saved_booking = booking_save_resp.json()
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Booking persistence failed",
+                    "downstream_status": booking_save_resp.status_code,
+                    "downstream_response": error_body,
+                },
+            )
 
-        notification_result = {"success": False, "queued": False, "message": "Confirmation email not queued"}
+        saved_booking = booking_save_resp.json()
+
         try:
             booking_record = saved_booking.get("booking") if isinstance(saved_booking, dict) else None
             await publish_booking_confirmation_event(
@@ -192,19 +225,15 @@ async def create_booking(payload: BookingRequest):
                     "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${total_amount:.2f}",
                 }
             )
-            notification_result = {
-                "success": True,
-                "queued": True,
-                "message": "Confirmation email queued for delivery",
-            }
         except Exception as exc:
             logger.exception("Failed to publish booking confirmation event")
-            notification_result = {
-                "success": False,
-                "queued": False,
-                "message": "Booking confirmed but confirmation email could not be queued",
-                "error": str(exc),
-            }
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Confirmation email could not be queued",
+                    "downstream_response": str(exc),
+                },
+            )
 
         return {
             "success": True,
@@ -213,7 +242,11 @@ async def create_booking(payload: BookingRequest):
             "payment": payment,
             "activity": activity,
             "total_amount": total_amount,
-            "notification": notification_result,
+            "notification": {
+                "success": True,
+                "queued": True,
+                "message": "Confirmation email queued for delivery",
+            },
         }
 
 

@@ -47,6 +47,13 @@ class ProcessPaymentRequest(BaseModel):
     PaymentMethod: str
     VoucherCode: Optional[str] = ""
 
+
+class LegacyProcessPaymentRequest(BaseModel):
+    amount: float
+    currency: str = "sgd"
+    payment_method: str
+    voucher_code: Optional[str] = ""
+
 class ValidateVoucherRequest(BaseModel):
     VoucherCode: str
 
@@ -137,6 +144,17 @@ async def process_payment(payload: ProcessPaymentRequest):
             )
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"ODC unreachable: {str(e)}")
+
+
+@app.post("/process-payment")
+async def process_payment_legacy(payload: LegacyProcessPaymentRequest):
+    mapped_payload = ProcessPaymentRequest(
+        Amount=max(1, int(round(payload.amount * 100))),
+        Currency=payload.currency.lower(),
+        PaymentMethod=payload.payment_method,
+        VoucherCode=payload.voucher_code or "",
+    )
+    return await process_payment(mapped_payload)
 
 
 # ─── Voucher endpoints ────────────────────────────────────────────────────────

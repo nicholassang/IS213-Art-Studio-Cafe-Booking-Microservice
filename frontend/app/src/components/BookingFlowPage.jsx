@@ -7,6 +7,8 @@ import { getSlotAvailability } from "../api/calendar";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../services/apiClient";
 
+const DEFAULT_BOOKING_PAYMENT_METHOD = "pm_card_visa";
+
 export default function BookingPage() {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -21,6 +23,20 @@ export default function BookingPage() {
   const [contactEmail, setContactEmail] = useState("");
   const { user } = useAuth();
 
+  const getBookingErrorMessage = (error) => {
+    const detail = error.response?.data?.detail;
+
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+
+    if (detail && typeof detail === "object") {
+      return detail.message || detail.downstream_response?.detail || detail.downstream_response?.message;
+    }
+
+    return error.response?.data?.message || "Failed to complete booking. Please try again.";
+  };
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -31,7 +47,7 @@ export default function BookingPage() {
         setMenuItems(menuResp.data.menu || []);
       } catch (err) {
         console.error("Could not load booking options", err);
-        setStatusMessage("Unable to load activities or food menu. Try again soon.");
+        setStatusMessage("Unable to load activities or food menu. Try again soon or refresh your browser.");
       }
     };
 
@@ -115,7 +131,7 @@ export default function BookingPage() {
         start_time: selectedSlot.start.toISOString(),
         end_time: selectedSlot.end.toISOString(),
         food_items: orderedFoodItems,
-        payment_method: "card",
+        payment_method: DEFAULT_BOOKING_PAYMENT_METHOD,
       });
 
       setBookingId(resp.data.booking?.booking?.id || `BK-${Date.now()}`);
@@ -127,8 +143,7 @@ export default function BookingPage() {
       await refreshSlotAvailability(selectedSlot);
     } catch (error) {
       console.error("Booking request failed", error);
-      const backendMessage = error.response?.data?.detail || error.response?.data?.message;
-      setStatusMessage(backendMessage || "Failed to complete booking. Please try again.");
+      setStatusMessage(getBookingErrorMessage(error));
       await refreshSlotAvailability(selectedSlot, selectedActivity);
     } finally {
       setLoadingBooking(false);

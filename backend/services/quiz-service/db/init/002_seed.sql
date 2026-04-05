@@ -1,0 +1,2 @@
+-- No seed data for quiz_submissions yet.
+-- Import exported Supabase quiz submissions here when available.
