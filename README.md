@@ -1,195 +1,221 @@
-# IS213 Art Studio Cafe Booking Microservice
+# Art Studio Cafe Booking Microservice
 
-Art Studio Cafe is a microservice-based booking platform for browsing activities, ordering food, completing a recommendation quiz, and making bookings through a single frontend.
+Art Studio Cafe is a microservice-based web platform for discovering creative activities, booking time slots, adding food and drink to a visit, completing payment, and receiving booking confirmations. The project also includes an AI-assisted recommendation flow to help users discover activities that match their preferences.
 
-The stack is split into:
+This repository is designed as a presentation-ready full-stack system with:
 
-- React + Vite frontend
-- FastAPI backend services
-- Kong as the API gateway
-- RabbitMQ for asynchronous events
-- Postgres with one database per stateful service
-- Resend for booking confirmation email delivery
+- a React frontend
+- Kong as the only public API gateway
+- multiple FastAPI services and composite services
+- RabbitMQ for asynchronous event delivery
+- Postgres with database-per-service ownership
 
-## Architecture Overview
+## Presentation Summary
 
-### High-Level Request Flow
+This project demonstrates:
+
+- microservice decomposition by business capability
+- API gateway routing with Kong
+- orchestration through composite services
+- asynchronous event-driven communication with RabbitMQ
+- service-owned persistence with separate Postgres databases
+- frontend-to-backend integration for bookings, payments, saved experiences, and recommendations
+
+At a high level, the user journey is:
+
+1. Browse or discover activities.
+2. Choose a valid future booking slot.
+3. Add food or drinks to the booking.
+4. Submit payment and create the booking.
+5. Receive booking confirmation through the notification flow.
+6. View and manage bookings from the home page.
+
+## System Architecture
+
+### Public Request Path
 
 ```text
-Frontend (React @ :5173)
-                |
-                v
-Kong Gateway (@ :8000)
-                |
-                +--> user-service
-                +--> make-booking-composite-service
-                +--> activity-service
-                +--> ai-recommender-composite-service
-
-make-booking-composite-service orchestrates:
-        - activity-service
-        - menu-service
-        - foodorder-service
-        - payment-wrapper
-        - RabbitMQ
-
-ai-recommender-composite-service orchestrates:
-        - quiz-service
-        - ai-recommendation-wrapper
-
-notification-service consumes booking confirmation events from RabbitMQ
-and sends emails through Resend.
+Frontend (Vite, localhost:5173)
+  -> Kong Gateway (localhost:8000)
+    -> user-service
+    -> make-booking-composite-service
+    -> activity-service
+    -> ai-recommender-composite-service
 ```
 
-### Mermaid Diagram
-
-```mermaid
-flowchart LR
-        FE[Frontend React Vite\nlocalhost:5173] -->|HTTP| KONG[Kong Gateway\nlocalhost:8000]
-
-        KONG -->|/register /login /profile /logout| USER[user-service]
-        KONG -->|/activities /menu /booking /food-order| BOOKING[make-booking-composite-service]
-        KONG -->|/saved-activities /saved-experiences| ACT[activity-service]
-        KONG -->|/quiz /recommend| REC[ai-recommender-composite-service]
-
-        BOOKING --> ACT
-        BOOKING --> MENU[menu-service]
-        BOOKING --> FOOD[foodorder-service]
-        BOOKING --> PAY[payment-wrapper]
-
-        REC --> QUIZ[quiz-service]
-        REC --> AIWRAP[ai-recommendation-wrapper]
-
-        BOOKING -->|booking.confirmed| EX[(RabbitMQ exchange\nbooking.events)]
-        EX --> EMAILQ[[booking.confirmation.email.v2]]
-        EMAILQ --> NOTIF[notification-service]
-        NOTIF --> RESEND[Resend]
-```
-
-## Service Map
-
-### Frontend
+### Runtime Roles
 
 - `frontend/app`
-- React 19 + Vite
-- Calls Kong at `http://localhost:8000`
-
-### Gateway and Composite Services
+  User-facing React application.
 
 - `backend/kong`
-    - Declarative Kong config
-    - Public entrypoint for frontend traffic
+  Kong declarative gateway config. This is the only supported public backend entrypoint.
 
 - `backend/composite-service/make-booking-composite-service`
-    - Orchestrates booking creation
-    - Validates activity slot availability
-    - Validates menu items and creates food orders
-    - Calls payment wrapper
-    - Persists booking through activity-service
-    - Publishes booking confirmation events
+  Orchestrates booking creation, payment, availability checks, food order coordination, and booking persistence.
 
 - `backend/composite-service/ai-recommender-composite-service`
-    - Orchestrates recommendation flow
-    - Reads quiz submissions and AI recommendation output
-
-### Core Domain Services
+  Coordinates the recommendation flow and routes quiz/recommendation work downstream.
 
 - `backend/services/user-service`
-    - Registration, login, logout, profile
-    - Uses its own Postgres database
+  Authentication and session/profile handling.
 
 - `backend/services/activity-service`
-    - Activities catalog
-    - Bookings
-    - Slot availability checks
-    - Saved activities and saved experiences
-    - Uses its own Postgres database
+  Activities, bookings, slot availability, booking cancellation, saved activities, and saved experiences.
 
 - `backend/services/menu-service`
-    - Menu catalog and pricing
-    - Uses its own Postgres database
+  Menu catalog and pricing.
 
 - `backend/services/foodOrder-service`
-    - Food order persistence
-    - Uses its own Postgres database
+  Food order persistence.
 
 - `backend/services/quiz-service`
-    - Serves quiz question bank
-    - Persists quiz submissions
-    - Publishes quiz submission events
-    - Uses its own Postgres database
+  Quiz question and submission handling.
 
 - `backend/services/notification_service`
-    - Consumes booking confirmation events
-    - Sends emails through Resend
+  Booking confirmation email delivery.
 
-### Wrappers
+- `backend/services/ai-recommender-service`
+  Recommendation service layer in front of the AI wrapper.
 
 - `backend/wrappers/payment-wrapper`
-    - Payment integration boundary
+  Payment integration boundary.
 
 - `backend/wrappers/ai-recommendation-wrapper`
-    - AI recommendation boundary
+  AI integration boundary.
 
-- `backend/wrappers/notification_wrapper`
-    - Notification-related wrapper code
-
-## Database Layout
-
-The project now follows a database-per-service model.
-
-Stateful services each own a dedicated Postgres container:
-
-- `menu-db` for `menu-service`
-- `foodorder-db` for `foodOrder-service`
-- `user-db` for `user-service`
-- `activity-db` for `activity-service`
-- `quiz-db` for `quiz-service`
-
-Each service keeps its schema and seed SQL under its own `db/init` directory. These scripts are mounted into the corresponding Postgres container and run automatically on first initialization of a fresh volume.
-
-Important operational note:
-
-- Postgres init scripts only run when the volume is first created.
-- If you change schema or seed files and need them applied again from scratch, remove the relevant Docker volume before recreating the container.
-
-## Main User Flows
+## High-Level Flow
 
 ### Booking Flow
 
-1. The frontend submits `POST /booking` to Kong.
+1. The frontend submits booking and payment data to Kong through `POST /booking`.
 2. Kong routes the request to `make-booking-composite-service`.
-3. The composite service validates activity and slot availability through `activity-service`.
-4. It validates food selections through `menu-service` and creates item-level records in `foodorder-service`.
-5. It calls `payment-wrapper` to process payment.
-6. It writes the final booking through `activity-service`.
-7. It publishes `booking.confirmed` to RabbitMQ.
-8. `notification-service` consumes the event and sends the confirmation email via Resend.
+3. The composite validates the selected activity and time slot.
+4. The composite validates menu items and creates food-order records.
+5. The composite calls the payment wrapper.
+6. The composite persists the booking through `activity-service`.
+7. A booking confirmation event is published to RabbitMQ.
+8. `notification-service` consumes the event and sends the confirmation email.
 
 ### Recommendation Flow
 
-1. The frontend answers quiz questions through `quiz-service`.
-2. `quiz-service` stores the submission and publishes a quiz event.
-3. `ai-recommender-composite-service` coordinates downstream recommendation generation.
-4. `ai-recommendation-wrapper` handles the external AI call boundary.
+1. The frontend interacts with quiz and recommendation endpoints through Kong.
+2. Kong routes the request to `ai-recommender-composite-service`.
+3. The composite coordinates quiz state and recommendation generation.
+4. `ai-recommender-service` and `ai-recommendation-wrapper` handle downstream recommendation work.
 
-## Gateway Routes
+### Diagram
 
-Kong configuration lives in `backend/kong/kong.yml`.
+```mermaid
+flowchart LR
+    FE[Frontend\nReact + Vite] -->|HTTP| KONG[Kong\nAPI Gateway]
 
-Primary routed paths:
+    KONG --> USER[user-service]
+    KONG --> BOOKING[make-booking-composite-service]
+    KONG --> ACT[activity-service]
+    KONG --> RECCOMP[ai-recommender-composite-service]
+
+    BOOKING --> ACT
+    BOOKING --> MENU[menu-service]
+    BOOKING --> FOOD[foodOrder-service]
+    BOOKING --> PAY[payment-wrapper]
+
+    RECCOMP --> QUIZ[quiz-service]
+    RECCOMP --> RECSVC[ai-recommender-service]
+    RECSVC --> AIWRAP[ai-recommendation-wrapper]
+
+    BOOKING -->|booking.confirmed| MQ[(RabbitMQ)]
+    MQ --> NOTIF[notification-service]
+```
+
+## Project Structure
+
+```text
+backend/
+  docker-compose.yaml
+  kong/
+    kong.yml
+  composite-service/
+    ai-recommender-composite-service/
+    make-booking-composite-service/
+  services/
+    activity-service/
+    ai-recommender-service/
+    calendar-service/
+    foodOrder-service/
+    menu-service/
+    notification_service/
+    quiz-service/
+    user-service/
+  wrappers/
+    ai-recommendation-wrapper/
+    notification_wrapper/
+    payment-wrapper/
+
+frontend/
+  app/
+```
+
+Notes:
+
+- `calendar-service` exists in the repository but is not part of the current Docker Compose runtime shown in `backend/docker-compose.yaml`.
+- `frontend/app/README.md` is the default Vite template README and does not describe the full system. This root README is the project-level reference.
+
+## API Gateway Routes
+
+Kong currently exposes these public route groups:
 
 - `/register`, `/login`, `/profile`, `/logout` -> `user-service`
 - `/activities`, `/menu`, `/booking`, `/food-order` -> `make-booking-composite-service`
-- `/bookings`, `/saved-activities`, `/saved-experiences` -> `activity-service`
+- `/bookings`, `/saved-activities`, `/saved-experiences`, `/getAllActivities` -> `activity-service`
 - `/quiz`, `/recommend` -> `ai-recommender-composite-service`
 
-## Running the Project
+Kong configuration lives in `backend/kong/kong.yml`.
+
+## Data Ownership
+
+Each stateful service owns its own Postgres database:
+
+- `menu-db`
+- `foodorder-db`
+- `user-db`
+- `activity-db`
+- `quiz-db`
+
+Each service stores its own schema and seed files under its `db/init` folder. These scripts run only when a fresh database volume is created.
+
+## Eventing
+
+RabbitMQ is used for asynchronous communication.
+
+Current booking-notification topology:
+
+- Exchange: `booking.events`
+- Routing key: `booking.confirmed`
+- Queue: `booking.confirmation.email.v2`
+- Dead-letter queue: `booking.confirmation.dlq.v2`
+
+Quiz-related messaging uses:
+
+- Exchange: `quiz_events`
+- Routing key: `quiz.submitted`
+
+## Local Development Setup
 
 ### Prerequisites
 
 - Docker Desktop with Compose support
 - Node.js 20+ and npm
+
+### Start Docker Desktop
+
+Docker Desktop must be running before you start the backend.
+
+Quick check:
+
+```bash
+docker version
+```
 
 ### Start the Backend
 
@@ -206,7 +232,7 @@ docker compose down
 docker compose down -v
 ```
 
-Use `docker compose down -v` only when you intentionally want to remove persisted Postgres data and rerun all init scripts from scratch.
+Use `docker compose down -v` only when you intentionally want to remove persisted database state and re-run initialization from scratch.
 
 ### Start the Frontend
 
@@ -216,30 +242,27 @@ npm install
 npm run dev
 ```
 
-Frontend URL:
+### Local URLs
 
-- `http://localhost:5173`
-
-Gateway URL:
-
-- `http://localhost:8000`
+- Frontend: `http://localhost:5173`
+- Kong gateway: `http://localhost:8000`
+- Kong admin API: `http://localhost:8001`
 
 ## Ports
 
-### Public / Developer-Facing Ports
+Developer-facing ports used in the current stack:
 
 - `5173` frontend dev server
 - `8000` Kong proxy
 - `8001` Kong admin API
 - `8005` user-service
-- `8006` ai-recommendation-wrapper
 - `8007` payment-wrapper
-- `8009` ai-recommender-composite-service
 - `8010` notification-service
 - `8011` activity-service
 - `8012` quiz-service
 - `8013` menu-service
-- `8014` foodorder-service
+- `8014` foodOrder-service
+- `8015` ai-recommender-service
 - `5433` menu-db
 - `5434` foodorder-db
 - `5435` user-db
@@ -248,98 +271,82 @@ Gateway URL:
 - `5672` RabbitMQ AMQP
 - `15672` RabbitMQ management UI
 
-## Environment Variables
+## Environment and Secrets
 
-This repo works best with service-scoped environment files and Compose-managed local defaults.
+This project uses a mix of Compose-managed variables and service-specific env files.
 
-Recommended approach:
+Examples:
 
-- Keep service-specific secrets close to the service that uses them.
-- Keep local development wiring in `backend/docker-compose.yaml` when it is only relevant to the Compose stack.
-- Avoid one giant shared `.env` file for every container.
-
-Current examples:
-
-- `ai-recommendation-wrapper` uses its own `.env`
 - `payment-wrapper` uses its own `.env`
-- `notification-service` reads Resend configuration through Compose environment variables
-- database-backed services use service-specific `DATABASE_URL` values in Compose
+- `ai-recommendation-wrapper` uses its own `.env`
+- `notification-service` reads Resend-related values through Compose environment variables
+- database-backed services receive `DATABASE_URL` through Compose
 
-## Email Delivery
-
-Notification delivery depends on Resend.
-
-Relevant variables:
+Relevant email variables:
 
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
 - `RESEND_TEST_RECIPIENT`
 - `RESEND_FORCE_TEST_RECIPIENT`
 
-For real recipient delivery:
+## Troubleshooting
 
-- use a verified sender domain in `RESEND_FROM_EMAIL`
-- keep `RESEND_FORCE_TEST_RECIPIENT=false`
-- leave `RESEND_TEST_RECIPIENT` empty unless intentionally forcing all mail to a test inbox
+### Docker Desktop Pipe Error
 
-## RabbitMQ Topology
-
-Booking notifications currently use:
-
-- Exchange: `booking.events`
-- Routing key: `booking.confirmed`
-- Queue: `booking.confirmation.email.v2`
-- Dead-letter queue: `booking.confirmation.dlq.v2`
-
-Quiz submissions are published on:
-
-- Exchange: `quiz_events`
-- Routing key: `quiz.submitted`
-
-## Repository Layout
+If you see an error like:
 
 ```text
-backend/
-    docker-compose.yaml
-    kong/
-        kong.yml
-    composite-service/
-        ai-recommender-composite-service/
-        make-booking-composite-service/
-    services/
-        activity-service/
-        foodOrder-service/
-        menu-service/
-        notification_service/
-        quiz-service/
-        user-service/
-    wrappers/
-        ai-recommendation-wrapper/
-        notification_wrapper/
-        payment-wrapper/
-
-frontend/
-    app/
-        src/
-            api/
-            app/
-            components/
-            context/
-            pages/
-            services/
+open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified
 ```
 
-## Development Notes
+Docker Desktop is not running or its Linux engine is unavailable.
 
-- Follow the request path from frontend to Kong first when debugging user-facing issues.
-- Respect service boundaries: no cross-database joins between service-owned Postgres instances.
-- Keep public API payloads aligned between frontend, composite services, and wrappers.
-- Treat notification delivery and recommendation event publishing as asynchronous side effects.
-- Healthchecks in Compose matter because Kong may route traffic before a service is actually ready if startup ordering is loose.
+Useful checks:
 
-## Known Operational Conventions
+```bash
+docker version
+docker context ls
+```
 
-- Booking payment requests are normalized by the booking composite before reaching `payment-wrapper`.
-- Activity availability is computed from persisted bookings in `activity-service`.
-- Menu, food orders, users, activities, and quiz submissions are no longer stored in Supabase.
+On Windows:
 
+```powershell
+Get-Service com.docker.service
+```
+
+### Login Returns 404
+
+If login returns 404 from the frontend, first verify Kong and the backend stack are running.
+
+Useful checks:
+
+```bash
+curl http://localhost:8000/profile
+curl -X POST http://localhost:8000/login
+```
+
+### Booking Cancel Route Returns 404
+
+If `/bookings/{id}/cancel` returns 404 after backend route changes, rebuild the affected services:
+
+```bash
+cd backend
+docker compose up -d --build activity-service kong
+```
+
+### Source Code Changed but Containers Still Serve Old Behavior
+
+Rebuild the affected services:
+
+```bash
+docker compose up -d --build <service-name>
+```
+
+## Key Design Notes
+
+- Kong is the only supported public API entrypoint.
+- Activity availability is derived from persisted bookings in `activity-service`.
+- Booking confirmation email delivery is asynchronous.
+- Booking history and booking cancellation are exposed through `activity-service` via Kong.
+- Payment happens before final booking persistence in the booking composite flow.
+- Frontend issues should generally be debugged by following the path: frontend -> Kong -> downstream service.

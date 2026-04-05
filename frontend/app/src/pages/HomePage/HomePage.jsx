@@ -237,6 +237,7 @@ const styles = `
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 16px;
+    align-items: start;
   }
 
   .home-booking-card {
@@ -247,6 +248,7 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 10px;
+    align-self: start;
   }
 
   .home-booking-card-header {
@@ -262,8 +264,10 @@ const styles = `
   }
 
   .home-booking-card-toggle {
-    padding: 8px 12px;
-    border-radius: 10px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--surface);
     color: var(--text);
@@ -271,6 +275,11 @@ const styles = `
     cursor: pointer;
     transition: 0.2s;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
   }
 
   .home-booking-card-toggle:hover {
@@ -388,7 +397,7 @@ export default function HomePage() {
   const [bookingsError, setBookingsError] = useState("");
   const [bookingActionMessage, setBookingActionMessage] = useState("");
   const [cancelingBookingId, setCancelingBookingId] = useState(null);
-  const [collapsedBookings, setCollapsedBookings] = useState({});
+  const [collapsedBookings, setCollapsedBookings] = useState(() => Object.create(null));
 
   useEffect(() => {
     if (!user?.username) {
@@ -599,7 +608,7 @@ export default function HomePage() {
                   {!bookingsLoading && !bookingsError && bookings.length > 0 && (
                     <div className="home-bookings-grid">
                       {bookings.map((booking) => {
-                        const isCollapsed = Boolean(collapsedBookings[booking.id]);
+                        const isCollapsed = collapsedBookings[booking.id] ?? true;
 
                         return (
                           <article key={booking.id} className="home-booking-card">
@@ -616,8 +625,10 @@ export default function HomePage() {
                                 className="home-booking-card-toggle"
                                 onClick={() => toggleBookingCard(booking.id)}
                                 aria-expanded={!isCollapsed}
+                                aria-label={isCollapsed ? "Expand booking details" : "Collapse booking details"}
+                                title={isCollapsed ? "Expand booking details" : "Collapse booking details"}
                               >
-                                {isCollapsed ? "Expand" : "Collapse"}
+                                <span aria-hidden="true">{isCollapsed ? "+" : "-"}</span>
                               </button>
                             </div>
                             {!isCollapsed && (
