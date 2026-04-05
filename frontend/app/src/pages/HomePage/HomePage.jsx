@@ -5,7 +5,6 @@ import BookingPage from "../../components/BookingFlowPage";
 import Layout from "../../components/Layout";
 import apiClient from "../../services/apiClient";
 import heroImage from "./art-booking-workshop.png";
-import { useState } from "react";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
