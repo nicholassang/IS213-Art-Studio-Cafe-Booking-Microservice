@@ -6,3 +6,4 @@ pydantic
 
 # Database
 supabase
+psycopg[binary]==3.2.9
