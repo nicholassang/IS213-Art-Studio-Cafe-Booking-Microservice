@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import BookingPage from "../../components/BookingFlowPage";
 import Layout from "../../components/Layout";
+import apiClient from "../../services/apiClient";
 import heroImage from "./art-booking-workshop.png";
 
 const styles = `
@@ -179,6 +181,87 @@ const styles = `
     gap: 16px;
   }
 
+  .home-bookings-panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .home-bookings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .home-bookings-subtitle {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .home-bookings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+
+  .home-booking-card {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .home-booking-card h3 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .home-booking-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .home-booking-status {
+    width: fit-content;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f4ece1;
+    color: #7a664d;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .home-booking-detail {
+    margin: 0;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .home-bookings-empty {
+    margin: 0;
+    padding: 18px;
+    border-radius: 18px;
+    background: var(--surface-2);
+    border: 1px dashed var(--line);
+    color: var(--muted);
+  }
+
   .home-section-heading {
     font-family: 'Playfair Display', serif;
     font-size: 2rem;
@@ -196,6 +279,80 @@ const styles = `
 export default function HomePage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState("");
+
+  useEffect(() => {
+    if (!user?.username) {
+      setBookings([]);
+      setBookingsError("");
+      setBookingsLoading(false);
+      return;
+    }
+
+    let ignore = false;
+
+    const fetchBookings = async () => {
+      setBookingsLoading(true);
+      setBookingsError("");
+
+      try {
+        const response = await apiClient.get("/bookings", {
+          params: { user_name: user.username },
+        });
+
+        if (!ignore) {
+          setBookings(response.data.bookings || []);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setBookings([]);
+          setBookingsError("Unable to load your bookings right now.");
+        }
+      } finally {
+        if (!ignore) {
+          setBookingsLoading(false);
+        }
+      }
+    };
+
+    fetchBookings();
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.username]);
+
+  const formatBookingDateTime = (value) => {
+    if (!value) {
+      return "Not scheduled";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const formatBookingAmount = (value) => {
+    const amount = Number(value);
+
+    if (!Number.isFinite(amount)) {
+      return "Pending";
+    }
+
+    return `$${amount.toFixed(2)}`;
+  };
 
   return (
     <>
@@ -266,10 +423,51 @@ export default function HomePage() {
           </div>
 
           {user && (
-            <div className="home-booking-wrap">
-              <h2 className="home-section-heading">Start your booking</h2>
-              <BookingPage />
-            </div>
+            <>
+              <div className="home-bookings-panel">
+                <div className="home-bookings-header">
+                  <h2 className="home-section-heading">Your bookings</h2>
+                  <p className="home-bookings-subtitle">Remember to mark your calendars!</p>
+                </div>
+
+                {bookingsLoading && <p className="home-bookings-empty">Loading your bookings...</p>}
+                {!bookingsLoading && bookingsError && <p className="home-bookings-empty">{bookingsError}</p>}
+                {!bookingsLoading && !bookingsError && bookings.length === 0 && (
+                  <p className="home-bookings-empty">You have no bookings yet. Reserve your first session below.</p>
+                )}
+
+                {!bookingsLoading && !bookingsError && bookings.length > 0 && (
+                  <div className="home-bookings-grid">
+                    {bookings.map((booking) => (
+                      <article key={booking.id} className="home-booking-card">
+                        <div className="home-booking-meta">
+                          <span className="home-booking-status">{booking.status || "confirmed"}</span>
+                          <span>Booking #{booking.id}</span>
+                        </div>
+                        <h3>{booking.activity_name || booking.activity_id || "Activity booking"}</h3>
+                        <p className="home-booking-detail">
+                          <strong>Starts:</strong> {formatBookingDateTime(booking.start_time)}
+                        </p>
+                        <p className="home-booking-detail">
+                          <strong>Ends:</strong> {formatBookingDateTime(booking.end_time)}
+                        </p>
+                        <p className="home-booking-detail">
+                          <strong>Total:</strong> {formatBookingAmount(booking.total_amount)}
+                        </p>
+                        <p className="home-booking-detail">
+                          <strong>Email:</strong> {booking.user_email || "Not provided"}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="home-booking-wrap">
+                <h2 className="home-section-heading">Start your booking</h2>
+                <BookingPage />
+              </div>
+            </>
           )}
         </div>
       </Layout>

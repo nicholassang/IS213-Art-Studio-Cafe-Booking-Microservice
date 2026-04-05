@@ -245,8 +245,22 @@ def get_booking_availability(start_time: str, end_time: str, activity_id: str):
 
 
 @app.get("/bookings")
-def list_bookings():
-    bookings = fetch_all(f"SELECT {BOOKING_COLUMNS} FROM bookings ORDER BY id")
+def list_bookings(user_name: Optional[str] = None):
+    if user_name:
+        bookings = fetch_all(
+            f"""
+            SELECT {BOOKING_COLUMNS}
+            FROM bookings
+            WHERE user_name = %s
+            ORDER BY start_time DESC NULLS LAST, id DESC
+            """,
+            (user_name,),
+        )
+    else:
+        bookings = fetch_all(
+            f"SELECT {BOOKING_COLUMNS} FROM bookings ORDER BY start_time DESC NULLS LAST, id DESC"
+        )
+
     return {"success": True, "bookings": bookings}
 
 # Save an activity
