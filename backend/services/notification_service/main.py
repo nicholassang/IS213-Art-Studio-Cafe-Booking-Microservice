@@ -41,9 +41,11 @@ class BookingConfirmationEvent(BaseModel):
     user_name: str
     activity_id: str
     activity_name: str
+    activity_price: float = 0.0
     start_time: str
     end_time: str
     food_orders: list[dict] = Field(default_factory=list)
+    subtotal_amount: float | None = None
     total_amount: float
     payment: dict
     message: str = "Your booking has been confirmed."
@@ -67,12 +69,14 @@ def format_singapore_range(start_time: str, end_time: str) -> str:
 def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[str, str]:
     formatted_time = format_singapore_range(event.start_time, event.end_time)
 
+    food_subtotal = 0.0
     food_rows = []
     for item in event.food_orders:
         name = item.get("name") or f"Item {item.get('menu_item_id', '')}".strip()
         qty = item.get("quantity", 1)
         unit_price = float(item.get("price", 0) or 0)
         line_total = unit_price * qty
+        food_subtotal += line_total
         food_rows.append(
             f"<tr>"
             f"<td style='padding:6px 0'>{name}</td>"
@@ -81,9 +85,30 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
             f"</tr>"
         )
 
-    if not food_rows:
-        food_rows.append(
-            "<tr><td style='padding:6px 0' colspan='3'>No food items recorded</td></tr>"
+    subtotal_amount = float(event.subtotal_amount) if event.subtotal_amount is not None else event.activity_price + food_subtotal
+    discount_amount = max(0.0, subtotal_amount - event.total_amount)
+
+    order_rows = [
+        f"<tr>"
+        f"<td style='padding:6px 0'>{event.activity_name}</td>"
+        f"<td style='padding:6px 0; text-align:center'>1</td>"
+        f"<td style='padding:6px 0; text-align:right'>${event.activity_price:.2f}</td>"
+        f"</tr>"
+    ]
+    order_rows.extend(food_rows)
+
+    if not event.food_orders:
+        order_rows.append(
+            "<tr><td style='padding:6px 0; color:#6d6258' colspan='3'>No food items ordered</td></tr>"
+        )
+
+    discount_row = ""
+    if discount_amount > 0:
+        discount_row = (
+            f"<tr>"
+            f"<td style='padding:6px 0' colspan='2'><strong>Discount Applied</strong></td>"
+            f"<td style='padding:6px 0; text-align:right'>-${discount_amount:.2f}</td>"
+            f"</tr>"
         )
 
     subject = f"Your Art Cafe booking is confirmed, {event.user_name}!"
@@ -97,7 +122,7 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
       <p><strong>Activity:</strong> {event.activity_name}</p>
       <p><strong>Time:</strong> {formatted_time}</p>
 
-      <h3>Food Order Summary</h3>
+            <h3>Order Summary</h3>
       <table style="width:100%; border-collapse: collapse;">
         <thead>
           <tr>
@@ -107,7 +132,12 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
           </tr>
         </thead>
         <tbody>
-          {''.join(food_rows)}
+                    {''.join(order_rows)}
+                    <tr>
+                        <td style='padding:6px 0; border-top: 1px solid #e6ddd1;' colspan='2'><strong>Subtotal</strong></td>
+                        <td style='padding:6px 0; border-top: 1px solid #e6ddd1; text-align:right'>${subtotal_amount:.2f}</td>
+                    </tr>
+                    {discount_row}
         </tbody>
       </table>
 
