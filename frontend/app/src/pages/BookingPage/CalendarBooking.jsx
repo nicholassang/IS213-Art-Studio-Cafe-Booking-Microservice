@@ -5,6 +5,9 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import Layout from "../../components/Layout";
 import apiClient from "../../services/apiClient";
+import { getFirstBookableDate, isFutureDaySlotSelection } from "../../utils/bookingCalendar";
+
+const TWO_HOUR_MS = 2 * 60 * 60 * 1000;
 
 
 export default function BookingPage() {
@@ -19,6 +22,7 @@ export default function BookingPage() {
   const [slotAvailability, setSlotAvailability] = useState(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const firstBookableDate = getFirstBookableDate();
 
   useEffect(() => {
     const fetchActivities = async () => {
@@ -60,6 +64,13 @@ export default function BookingPage() {
   };
 
   const handleSlotSelect = async (info) => {
+    if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
+      setSelectedSlot(null);
+      setSlotAvailability(null);
+      setStatusMessage("Please choose a slot from tomorrow onward.");
+      return;
+    }
+
     setSelectedSlot(info);
     setSlotAvailability(null);
 
@@ -133,6 +144,9 @@ export default function BookingPage() {
           <h1 style={{ marginTop: 0, marginBottom: "10px" }}>Book Your Activity</h1>
           <p style={{ color: "#7d7468", marginTop: 0 }}>
             Choose an activity and select a 2-hour slot from the calendar.
+          </p>
+          <p style={{ color: "#7d7468", marginBottom: 0 }}>
+            Same-day and past dates are unavailable. Booking starts from tomorrow.
           </p>
 
           {statusMessage && (
@@ -238,8 +252,9 @@ export default function BookingPage() {
             selectable={true}
             selectMirror={true}
             editable={false}
+            validRange={{ start: firstBookableDate }}
             select={handleSlotSelect}
-           selectAllow={(info) => info.end - info.start === 2 * 60 * 60 * 1000}
+            selectAllow={(info) => isFutureDaySlotSelection(info, TWO_HOUR_MS)}
             events={
               selectedSlot
                 ? [
