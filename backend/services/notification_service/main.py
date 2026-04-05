@@ -1,5 +1,7 @@
 import asyncio
 from contextlib import suppress
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 import logging
 import os
@@ -12,12 +14,20 @@ from wrappers.notification_wrapper.main import send_email_transaction_notificati
 app = FastAPI(title="Notification Service")
 
 logger = logging.getLogger(__name__)
+
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 BOOKING_EVENTS_EXCHANGE = "booking.events"
-BOOKING_CONFIRMATION_QUEUE = os.getenv("BOOKING_CONFIRMATION_QUEUE", "booking.confirmation.email.v2")
+BOOKING_CONFIRMATION_QUEUE = os.getenv(
+    "BOOKING_CONFIRMATION_QUEUE", "booking.confirmation.email.v2"
+)
 BOOKING_CONFIRMED_ROUTING_KEY = "booking.confirmed"
-BOOKING_CONFIRMATION_DLQ = os.getenv("BOOKING_CONFIRMATION_DLQ", "booking.confirmation.dlq.v2")
-BOOKING_CONFIRMATION_DLQ_ROUTING_KEY = os.getenv("BOOKING_CONFIRMATION_DLQ_ROUTING_KEY", "booking.confirmed.dead")
+BOOKING_CONFIRMATION_DLQ = os.getenv(
+    "BOOKING_CONFIRMATION_DLQ", "booking.confirmation.dlq.v2"
+)
+BOOKING_CONFIRMATION_DLQ_ROUTING_KEY = os.getenv(
+    "BOOKING_CONFIRMATION_DLQ_ROUTING_KEY", "booking.confirmed.dead"
+)
+
 
 class NotificationRequest(BaseModel):
     to_email: str
@@ -39,7 +49,24 @@ class BookingConfirmationEvent(BaseModel):
     message: str = "Your booking has been confirmed."
 
 
+def format_singapore_range(start_time: str, end_time: str) -> str:
+    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+
+    sg_tz = ZoneInfo("Asia/Singapore")
+    start_sg = start_dt.astimezone(sg_tz)
+    end_sg = end_dt.astimezone(sg_tz)
+
+    date_part = start_sg.strftime("%d %b %Y")
+    start_part = start_sg.strftime("%I:%M %p").lstrip("0")
+    end_part = end_sg.strftime("%I:%M %p").lstrip("0")
+
+    return f"{date_part}, {start_part} to {end_part}"
+
+
 def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[str, str]:
+    formatted_time = format_singapore_range(event.start_time, event.end_time)
+
     food_rows = []
     for item in event.food_orders:
         name = item.get("name") or f"Item {item.get('menu_item_id', '')}".strip()
@@ -47,11 +74,17 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
         unit_price = float(item.get("price", 0) or 0)
         line_total = unit_price * qty
         food_rows.append(
-            f"<tr><td style='padding:6px 0'>{name}</td><td style='padding:6px 0; text-align:center'>{qty}</td><td style='padding:6px 0; text-align:right'>${line_total:.2f}</td></tr>"
+            f"<tr>"
+            f"<td style='padding:6px 0'>{name}</td>"
+            f"<td style='padding:6px 0; text-align:center'>{qty}</td>"
+            f"<td style='padding:6px 0; text-align:right'>${line_total:.2f}</td>"
+            f"</tr>"
         )
 
     if not food_rows:
-        food_rows.append("<tr><td style='padding:6px 0' colspan='3'>No food items recorded</td></tr>")
+        food_rows.append(
+            "<tr><td style='padding:6px 0' colspan='3'>No food items recorded</td></tr>"
+        )
 
     subject = f"Your Art Cafe booking is confirmed, {event.user_name}!"
     html = f"""
@@ -62,7 +95,7 @@ def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[s
       <h3>Booking Summary</h3>
       <p><strong>Booking ID:</strong> {event.booking_id or 'Pending'}</p>
       <p><strong>Activity:</strong> {event.activity_name}</p>
-      <p><strong>Time:</strong> {event.start_time} to {event.end_time}</p>
+      <p><strong>Time:</strong> {formatted_time}</p>
 
       <h3>Food Order Summary</h3>
       <table style="width:100%; border-collapse: collapse;">
@@ -174,11 +207,15 @@ async def stop_rabbitmq_consumer():
     if connection and not connection.is_closed:
         await connection.close()
 
-# Legacy endpoint for testing email sending without RabbitMQ
+
 @app.post("/send-transaction-notification")
 async def send_notification(payload: NotificationRequest):
     try:
-        result = await send_email_transaction_notification_wrapper(payload.to_email, payload.username, payload.message)
+        result = await send_email_transaction_notification_wrapper(
+            payload.to_email,
+            payload.username,
+            payload.message,
+        )
         return {"success": True, "result": result}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
