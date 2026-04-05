@@ -200,9 +200,37 @@ const styles = `
     flex-wrap: wrap;
   }
 
+  .home-bookings-heading-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
   .home-bookings-subtitle {
     margin: 0;
     color: var(--muted);
+  }
+
+  .home-bookings-toggle {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fffaf3;
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+
+  .home-bookings-toggle:hover {
+    background: #f6eee2;
+    transform: translateY(-1px);
+  }
+
+  .home-bookings-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
   }
 
   .home-bookings-grid {
@@ -221,9 +249,32 @@ const styles = `
     gap: 10px;
   }
 
+  .home-booking-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
   .home-booking-card h3 {
     margin: 0;
     font-size: 1.05rem;
+  }
+
+  .home-booking-card-toggle {
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    flex-shrink: 0;
+  }
+
+  .home-booking-card-toggle:hover {
+    background: #f6eee2;
   }
 
   .home-booking-meta {
@@ -337,6 +388,7 @@ export default function HomePage() {
   const [bookingsError, setBookingsError] = useState("");
   const [bookingActionMessage, setBookingActionMessage] = useState("");
   const [cancelingBookingId, setCancelingBookingId] = useState(null);
+  const [collapsedBookings, setCollapsedBookings] = useState({});
 
   useEffect(() => {
     if (!user?.username) {
@@ -410,6 +462,13 @@ export default function HomePage() {
     } finally {
       setCancelingBookingId(null);
     }
+  };
+
+  const toggleBookingCard = (bookingId) => {
+    setCollapsedBookings((currentValue) => ({
+      ...currentValue,
+      [bookingId]: !currentValue[bookingId],
+    }));
   };
 
   const formatBookingDateTime = (value) => {
@@ -521,58 +580,82 @@ export default function HomePage() {
             <>
               <div className="home-bookings-panel">
                 <div className="home-bookings-header">
-                  <h2 className="home-section-heading">Your bookings</h2>
-                  <p className="home-bookings-subtitle">Remember to mark your calendars!</p>
+                  <div className="home-bookings-heading-group">
+                    <h2 className="home-section-heading">Your bookings</h2>
+                    <p className="home-bookings-subtitle">Remember to mark your calendars!</p>
+                  </div>
                 </div>
 
-                {bookingActionMessage && !bookingsError && (
-                  <p className="home-bookings-feedback">{bookingActionMessage}</p>
-                )}
-                {bookingsLoading && <p className="home-bookings-empty">Loading your bookings...</p>}
-                {!bookingsLoading && bookingsError && <p className="home-bookings-feedback is-error">{bookingsError}</p>}
-                {!bookingsLoading && !bookingsError && bookings.length === 0 && (
-                  <p className="home-bookings-empty">You have no bookings yet. Reserve your first session below.</p>
-                )}
+                <div className="home-bookings-content">
+                  {bookingActionMessage && !bookingsError && (
+                    <p className="home-bookings-feedback">{bookingActionMessage}</p>
+                  )}
+                  {bookingsLoading && <p className="home-bookings-empty">Loading your bookings...</p>}
+                  {!bookingsLoading && bookingsError && <p className="home-bookings-feedback is-error">{bookingsError}</p>}
+                  {!bookingsLoading && !bookingsError && bookings.length === 0 && (
+                    <p className="home-bookings-empty">You have no bookings yet. Reserve your first session below.</p>
+                  )}
 
-                {!bookingsLoading && !bookingsError && bookings.length > 0 && (
-                  <div className="home-bookings-grid">
-                    {bookings.map((booking) => (
-                      <article key={booking.id} className="home-booking-card">
-                        <div className="home-booking-meta">
-                          <span className="home-booking-status">{booking.status || "confirmed"}</span>
-                          <span>Booking #{booking.id}</span>
-                        </div>
-                        <h3>{booking.activity_name || booking.activity_id || "Activity booking"}</h3>
-                        <p className="home-booking-detail">
-                          <strong>Starts:</strong> {formatBookingDateTime(booking.start_time)}
-                        </p>
-                        <p className="home-booking-detail">
-                          <strong>Ends:</strong> {formatBookingDateTime(booking.end_time)}
-                        </p>
-                        <p className="home-booking-detail">
-                          <strong>Total:</strong> {formatBookingAmount(booking.total_amount)}
-                        </p>
-                        <p className="home-booking-detail home-booking-email">
-                          <strong>Email:</strong> {booking.user_email || "Not provided"}
-                        </p>
-                        <div className="home-booking-actions">
-                          <button
-                            type="button"
-                            className="home-booking-action is-danger"
-                            onClick={() => handleCancelBooking(booking.id)}
-                            disabled={booking.status === "cancelled" || cancelingBookingId === booking.id}
-                          >
-                            {booking.status === "cancelled"
-                              ? "Cancelled"
-                              : cancelingBookingId === booking.id
-                                ? "Cancelling..."
-                                : "Cancel booking"}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
+                  {!bookingsLoading && !bookingsError && bookings.length > 0 && (
+                    <div className="home-bookings-grid">
+                      {bookings.map((booking) => {
+                        const isCollapsed = Boolean(collapsedBookings[booking.id]);
+
+                        return (
+                          <article key={booking.id} className="home-booking-card">
+                            <div className="home-booking-card-header">
+                              <div>
+                                <div className="home-booking-meta">
+                                  <span className="home-booking-status">{booking.status || "confirmed"}</span>
+                                  <span>Booking #{booking.id}</span>
+                                </div>
+                                <h3>{booking.activity_name || booking.activity_id || "Activity booking"}</h3>
+                              </div>
+                              <button
+                                type="button"
+                                className="home-booking-card-toggle"
+                                onClick={() => toggleBookingCard(booking.id)}
+                                aria-expanded={!isCollapsed}
+                              >
+                                {isCollapsed ? "Expand" : "Collapse"}
+                              </button>
+                            </div>
+                            {!isCollapsed && (
+                              <>
+                                <p className="home-booking-detail">
+                                  <strong>Starts:</strong> {formatBookingDateTime(booking.start_time)}
+                                </p>
+                                <p className="home-booking-detail">
+                                  <strong>Ends:</strong> {formatBookingDateTime(booking.end_time)}
+                                </p>
+                                <p className="home-booking-detail">
+                                  <strong>Total:</strong> {formatBookingAmount(booking.total_amount)}
+                                </p>
+                                <p className="home-booking-detail home-booking-email">
+                                  <strong>Email:</strong> {booking.user_email || "Not provided"}
+                                </p>
+                                <div className="home-booking-actions">
+                                  <button
+                                    type="button"
+                                    className="home-booking-action is-danger"
+                                    onClick={() => handleCancelBooking(booking.id)}
+                                    disabled={booking.status === "cancelled" || cancelingBookingId === booking.id}
+                                  >
+                                    {booking.status === "cancelled"
+                                      ? "Cancelled"
+                                      : cancelingBookingId === booking.id
+                                        ? "Cancelling..."
+                                        : "Cancel booking"}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="home-booking-wrap">
