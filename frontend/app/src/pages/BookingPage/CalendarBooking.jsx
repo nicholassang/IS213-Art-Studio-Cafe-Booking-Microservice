@@ -65,19 +65,15 @@ export default function BookingPage() {
     }
   };
 
-  const handleNext = () => {
-    if (!selectedSlot || !selectedActivity) return;
-    // pass activity + slot via navigation state to menu
-    navigate("/menu", {
-      state: {
-        bookingActivity: selectedActivity,
-        bookingSlot: {
-          start: selectedSlot.start.toISOString(),
-          end: selectedSlot.end.toISOString(),
-        },
-      },
-    });
+  const bookingState = {
+    bookingActivity: selectedActivity,
+    bookingSlot: selectedSlot ? {
+      start: selectedSlot.start.toISOString(),
+      end: selectedSlot.end.toISOString(),
+    } : null,
   };
+
+  const isDisabled = !selectedSlot || !selectedActivity || slotAvailability?.is_full;
 
   return (
     <>
@@ -102,47 +98,32 @@ export default function BookingPage() {
             <span className="bp-eyebrow">Booking — Select Your Time</span>
             <h1 className="bp-title">Book Your Activity 🗓️</h1>
             <p className="bp-subtitle">
-              Choose an activity and select a 2-hour slot from the calendar below.
+              Choose a 2-hour time slot. Then add food or go straight to checkout.
             </p>
           </section>
 
           {/* Status */}
-          {statusMessage && (
-            <div className="bp-status">{statusMessage}</div>
-          )}
+          {statusMessage && <div className="bp-status">{statusMessage}</div>}
 
           {/* Selected Activity */}
           <div className="bp-card">
             <h2 className="bp-card-title">🎨 Selected Activity</h2>
-
             {selectedActivity ? (
               <div className="bp-activity-display">
-                <img
-                  src={selectedActivity.image}
-                  alt={selectedActivity.name}
-                  className="bp-activity-img"
-                />
+                <img src={selectedActivity.image} alt={selectedActivity.name} className="bp-activity-img" />
                 <div className="bp-activity-info">
                   <h3>{selectedActivity.name}</h3>
                   <p>{selectedActivity.category}</p>
                   <p>{selectedActivity.duration} • {selectedActivity.level}</p>
-                  <p style={{ color: "var(--accent-deep)", fontWeight: 600 }}>
-                    ${selectedActivity.price} / person
-                  </p>
+                  <p style={{ color: "var(--accent-deep)", fontWeight: 600 }}>${selectedActivity.price} / person</p>
                 </div>
               </div>
             ) : (
               <>
-                <p style={{ color: "var(--muted)", marginBottom: "16px" }}>
-                  No activity selected. Pick one:
-                </p>
+                <p style={{ color: "var(--muted)", marginBottom: "16px" }}>No activity selected. Pick one:</p>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   {activities.map(activity => (
-                    <button
-                      key={activity.id}
-                      className="bp-activity-pick-btn"
-                      onClick={() => setSelectedActivity(activity)}
-                    >
+                    <button key={activity.id} className="bp-activity-pick-btn" onClick={() => setSelectedActivity(activity)}>
                       {activity.name}
                     </button>
                   ))}
@@ -154,7 +135,6 @@ export default function BookingPage() {
           {/* Calendar */}
           <div className="bp-card">
             <h2 className="bp-card-title">🕐 Select Time Slot</h2>
-
             <div className="bp-cal-wrap">
               <FullCalendar
                 plugins={[timeGridPlugin, interactionPlugin]}
@@ -189,11 +169,7 @@ export default function BookingPage() {
                   ? `${selectedSlot.start.toLocaleString()} — ${selectedSlot.end.toLocaleString()}`
                   : "Click on a time block to select a 2-hour slot"}
               </p>
-
-              {loadingAvailability && (
-                <p style={{ color: "var(--muted)" }}>Checking availability…</p>
-              )}
-
+              {loadingAvailability && <p style={{ color: "var(--muted)" }}>Checking availability…</p>}
               {!loadingAvailability && slotAvailability && (
                 <p className={slotAvailability.is_full ? "bp-slot-full" : "bp-slot-open"}>
                   {slotAvailability.is_full
@@ -203,20 +179,23 @@ export default function BookingPage() {
               )}
             </div>
 
-            {/* Next button */}
-            <button
-              className="bp-next-btn"
-              onClick={handleNext}
-              disabled={!selectedSlot || !selectedActivity || slotAvailability?.is_full}
-            >
-              {!selectedActivity
-                ? "Select an activity first"
-                : !selectedSlot
-                ? "Select a time slot to continue"
-                : slotAvailability?.is_full
-                ? "Slot is full — choose another time"
-                : "Next — Select Food →"}
-            </button>
+            
+            <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
+              <button
+                className="bp-btn bp-btn-primary"
+                onClick={() => navigate("/menu", { state: bookingState })}
+                disabled={isDisabled}
+              >
+                🍽️ Add Food First
+              </button>
+              <button
+                className="bp-btn bp-btn-secondary"
+                onClick={() => navigate("/cart", { state: bookingState })}
+                disabled={isDisabled}
+              >
+                Skip Food → Checkout
+              </button>
+            </div>
           </div>
         </div>
       </Layout>
@@ -225,7 +204,7 @@ export default function BookingPage() {
 }
 
 
-//STYLE
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
 
@@ -240,10 +219,7 @@ const styles = `
     --shadow: 0 12px 30px rgba(42, 30, 18, 0.08);
   }
 
-  .bp-root {
-    font-family: 'DM Sans', sans-serif;
-    color: var(--text);
-  }
+  .bp-root { font-family: 'DM Sans', sans-serif; color: var(--text); }
 
   .bp-hero {
     background: linear-gradient(135deg, #f7f1e8 0%, #fdfaf6 100%);
@@ -367,77 +343,18 @@ const styles = `
     color: var(--accent-deep);
   }
 
-  /* FullCalendar overrides */
-  .bp-cal-wrap .fc {
-    font-family: 'DM Sans', sans-serif !important;
-    color: var(--text) !important;
-  }
-
-  .bp-cal-wrap .fc-toolbar-title {
-    font-family: 'Playfair Display', serif !important;
-    font-size: 1.1rem !important;
-    color: var(--text) !important;
-  }
-
-  .bp-cal-wrap .fc-button-primary {
-    background-color: var(--text) !important;
-    border-color: var(--text) !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    padding: 6px 14px !important;
-    font-size: 0.82rem !important;
-    color: #fff !important;
-  }
-
-  .bp-cal-wrap .fc-button-primary:hover {
-    background-color: var(--accent-deep) !important;
-    border-color: var(--accent-deep) !important;
-  }
-
-  .bp-cal-wrap .fc-button-primary:disabled {
-    background-color: var(--muted) !important;
-    border-color: var(--muted) !important;
-    opacity: 0.6 !important;
-  }
-
-  .bp-cal-wrap .fc-col-header-cell {
-    background: var(--surface-2) !important;
-    padding: 8px 0 !important;
-    font-size: 0.82rem !important;
-    font-weight: 600 !important;
-    color: var(--text) !important;
-  }
-
-  .bp-cal-wrap .fc-timegrid-slot-label-cushion {
-    font-size: 0.8rem !important;
-    color: var(--muted) !important;
-    font-family: 'DM Sans', sans-serif !important;
-  }
-
-  .bp-cal-wrap .fc-timegrid-slot {
-    border-color: var(--line) !important;
-    height: 48px !important;
-  }
-
-  .bp-cal-wrap .fc-scrollgrid {
-    border-color: var(--line) !important;
-  }
-
-  .bp-cal-wrap .fc-scrollgrid td,
-  .bp-cal-wrap .fc-scrollgrid th {
-    border-color: var(--line) !important;
-  }
-
-  .bp-cal-wrap .fc-highlight {
-    background: rgba(200, 169, 126, 0.2) !important;
-  }
-
-  .bp-cal-wrap .fc-event {
-    border-radius: 8px !important;
-    font-size: 0.82rem !important;
-    font-weight: 600 !important;
-  }
+  .bp-cal-wrap .fc { font-family: 'DM Sans', sans-serif !important; color: var(--text) !important; }
+  .bp-cal-wrap .fc-toolbar-title { font-family: 'Playfair Display', serif !important; font-size: 1.1rem !important; color: var(--text) !important; }
+  .bp-cal-wrap .fc-button-primary { background-color: var(--text) !important; border-color: var(--text) !important; font-family: 'DM Sans', sans-serif !important; font-weight: 600 !important; border-radius: 8px !important; padding: 6px 14px !important; font-size: 0.82rem !important; color: #fff !important; }
+  .bp-cal-wrap .fc-button-primary:hover { background-color: var(--accent-deep) !important; border-color: var(--accent-deep) !important; }
+  .bp-cal-wrap .fc-button-primary:disabled { background-color: var(--muted) !important; border-color: var(--muted) !important; opacity: 0.6 !important; }
+  .bp-cal-wrap .fc-col-header-cell { background: var(--surface-2) !important; padding: 8px 0 !important; font-size: 0.82rem !important; font-weight: 600 !important; color: var(--text) !important; }
+  .bp-cal-wrap .fc-timegrid-slot-label-cushion { font-size: 0.8rem !important; color: var(--muted) !important; font-family: 'DM Sans', sans-serif !important; }
+  .bp-cal-wrap .fc-timegrid-slot { border-color: var(--line) !important; height: 48px !important; }
+  .bp-cal-wrap .fc-scrollgrid { border-color: var(--line) !important; }
+  .bp-cal-wrap .fc-scrollgrid td, .bp-cal-wrap .fc-scrollgrid th { border-color: var(--line) !important; }
+  .bp-cal-wrap .fc-highlight { background: rgba(200, 169, 126, 0.2) !important; }
+  .bp-cal-wrap .fc-event { border-radius: 8px !important; font-size: 0.82rem !important; font-weight: 600 !important; }
 
   .bp-slot-info {
     margin-top: 20px;
@@ -451,16 +368,8 @@ const styles = `
 
   .bp-slot-info p { margin: 0 0 6px; }
   .bp-slot-info p:last-child { margin: 0; }
-
-  .bp-slot-open {
-    color: var(--accent-deep);
-    font-weight: 700;
-  }
-
-  .bp-slot-full {
-    color: #b42318;
-    font-weight: 700;
-  }
+  .bp-slot-open { color: var(--accent-deep); font-weight: 700; }
+  .bp-slot-full { color: #b42318; font-weight: 700; }
 
   .bp-status {
     padding: 14px 18px;
@@ -472,10 +381,9 @@ const styles = `
     margin-bottom: 20px;
   }
 
-  .bp-next-btn {
-    width: 100%;
+  .bp-btn {
+    flex: 1;
     padding: 17px;
-    background: var(--text);
     border: none;
     border-radius: 14px;
     color: #fff;
@@ -487,18 +395,13 @@ const styles = `
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 6px 20px rgba(36, 28, 23, 0.2);
-    margin-top: 20px;
   }
 
-  .bp-next-btn:hover:not(:disabled) {
-    background: var(--accent-deep);
-    transform: translateY(-1px);
-    box-shadow: 0 8px 24px rgba(36, 28, 23, 0.25);
-  }
+  .bp-btn-primary { background: var(--text); }
+  .bp-btn-primary:hover:not(:disabled) { background: var(--accent-deep); transform: translateY(-1px); }
 
-  .bp-next-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-    transform: none;
-  }
+  .bp-btn-secondary { background: var(--accent-deep); }
+  .bp-btn-secondary:hover:not(:disabled) { background: var(--accent); transform: translateY(-1px); }
+
+  .bp-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 `;
