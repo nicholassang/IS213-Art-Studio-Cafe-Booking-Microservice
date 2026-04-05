@@ -125,24 +125,6 @@ services:
       ai-recommender-service:
         condition: service_started
 
-  # Legacy gateway retained for reference only.
-  # It is disabled by default and only starts when profile `legacy-gateway` is enabled.
-  api-gateway-legacy:
-    profiles: ["legacy-gateway"]
-    build: ./api-gateway
-    container_name: api-gateway-legacy
-    ports:
-      - "8008:8000"
-    environment:
-      - COMPOSITE_URL=http://composite-service:8000
-      - AI_RECOMMENDER_COMPOSITE_URL=http://ai-recommender-composite-service:8000
-      - ACTIVITY_URL=http://activity-service:8000
-    depends_on:
-      - user-service
-      - composite-service
-      - activity-service
-      - ai-recommender-composite-service
-
   user-service:
     build: ./services/user-service
     container_name: user-service
