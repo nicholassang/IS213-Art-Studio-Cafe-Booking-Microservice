@@ -4,7 +4,6 @@ from fastapi.responses import JSONResponse
 import httpx
 import logging
 import os
-from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -95,7 +94,7 @@ async def get_progress(session_id: str):
 
 
 @app.get("/quiz/questions")
-async def get_questions(category: Optional[str] = None):
+async def get_questions(category: str | None = None):
     return await _quiz_passthrough("GET", "/quiz/questions", params={"category": category})
 
 
@@ -119,7 +118,7 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
 
     # Step 1: Submit quiz session to quiz atomic, get Q&A back
     quiz_res = await _http("POST", f"{QUIZ_URL}/quiz/session/{session_id}/submit", timeout=30.0)
-    if quiz_res.status_code != 201:
+    if quiz_res.status_code not in (200, 201):
         raise HTTPException(
             status_code=quiz_res.status_code,
             detail=f"Quiz submission failed: {quiz_res.text}",
@@ -181,8 +180,14 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
         f"personality={ai_data['personality_type']}"
     )
 
-    # Step 4: Return combined result to client (AI atomic already returns proper structure)
-    return ai_data
+    # Step 4: Return combined result to client
+    # Wrap the AI response under "recommendation" key for the frontend
+    return {
+        "submission_id": ai_data["submission_id"],
+        "user_id": ai_data.get("user_id"),
+        "submitted_at": quiz_data.get("submitted_at"),
+        "recommendation": ai_data,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +198,40 @@ async def submit_and_recommend(session_id: str, authenticated: bool = Query(defa
 @app.get("/quiz/submissions/{submission_id}")
 async def get_submission(submission_id: str):
     """Fetch stored AI results directly from the AI atomic (single source of truth)."""
+    raw = await _ai_get(f"/quiz/results/{submission_id}")
+    # Transform the raw Supabase record into the same format as the submit endpoint
+    # so the ResultPage can consume it identically
+    recommendation = {
+        "submission_id": raw.get("submission_id"),
+        "user_id": raw.get("user_id"),
+        "personality_type": raw.get("personality_type"),
+        "scores": {
+            "solo_social": raw.get("solo_social_score", 0),
+            "structured_freeform": raw.get("structured_freeform_score", 0),
+            "reasoning": raw.get("scoring_reasoning", ""),
+        },
+        "profile_title": raw.get("profile_title"),
+        "profile_body": raw.get("profile_body"),
+        "recommendations": raw.get("recommendations", []),
+        "activity_explanations": raw.get("activity_explanations", []),
+        "food_recommendations": raw.get("food_recommendations", []),
+        "food_recommendation_details": raw.get("food_recommendation_details", []),
+        "drink_recommendation": raw.get("drink_recommendation", ""),
+        "drink_recommendation_details": raw.get("drink_recommendation_details", {}),
+        "closing": raw.get("closing"),
+        "confidence_score": raw.get("confidence_score"),
+    }
+    return {
+        "submission_id": raw.get("submission_id"),
+        "user_id": raw.get("user_id"),
+        "answers": raw.get("answers", []),
+        "recommendation": recommendation,
+    }
+
+
+@app.get("/quiz/results/{submission_id}")
+async def get_raw_results(submission_id: str):
+    """Fetch raw AI results from the AI atomic (unwrapped, direct Supabase data)."""
     return await _ai_get(f"/quiz/results/{submission_id}")
 
 

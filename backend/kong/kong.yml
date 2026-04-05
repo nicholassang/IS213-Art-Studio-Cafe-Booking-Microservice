@@ -41,7 +41,6 @@ services:
       - name: ai-recommender-routes
         paths:
           - /quiz
-          - /recommend
         strip_path: false
 
 plugins:

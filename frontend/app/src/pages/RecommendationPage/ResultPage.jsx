@@ -639,7 +639,8 @@ export default function ResultPage() {
       // Check sessionStorage first — unauthenticated users won't have data in Supabase
       const cached = sessionStorage.getItem(`quiz_result_${submissionId}`);
       if (cached) {
-        const rec = JSON.parse(cached);
+        const data = JSON.parse(cached);
+        const rec = data.recommendation || data;
         setResult(rec);
         setLoading(false);
         const confidence = rec.confidence_score ?? 0.6;
@@ -699,8 +700,10 @@ export default function ResultPage() {
         setResult(rec);
         setLoading(false);
 
-        // Cache for page-refresh resilience
-        sessionStorage.setItem(`quiz_result_${submissionId}`, JSON.stringify(rec));
+        // Cache for page-refresh resilience — store the wrapped format
+        // consistent with what ChatWidget caches on submit
+        const wrapped = data.recommendation ? data : { submission_id: submissionId, recommendation: rec };
+        sessionStorage.setItem(`quiz_result_${submissionId}`, JSON.stringify(wrapped));
 
         // Animate bars after render
         const confidence = rec.confidence_score ?? 0.6;

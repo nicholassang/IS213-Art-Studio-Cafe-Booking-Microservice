@@ -46,7 +46,7 @@ class RecommendRequest(BaseModel):
     user_id: str
     answers: list[QuizAnswer] = Field(..., min_length=1)
     submitted_at: str | None = None
-    is_authenticated: bool = True
+    is_authenticated: bool = False
     activities: list[str] | None = None
     food: list[str] | None = None
     drinks: list[str] | None = None
@@ -70,11 +70,6 @@ class ProfileResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _require_supabase():
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
-
-
 def _supabase_fetch(description: str, query, allow_empty: bool = False):
     try:
         result = query.execute()
@@ -133,8 +128,16 @@ def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
     ]
 
 
+def _extract_from_obj_or_model(obj_or_dict, attr, default=""):
+    """Extract attribute from either dict or Pydantic model."""
+    if isinstance(obj_or_dict, dict):
+        return obj_or_dict.get(attr, default)
+    return getattr(obj_or_dict, attr, default)
+
+
 def _build_response(
     submission_id: str,
+    user_id: str,
     personality_type: str,
     scores: ScoringResult | dict,
     profile: ProfileResult | dict,
@@ -145,43 +148,24 @@ def _build_response(
     drink_recommendation_details: dict,
     confidence: float,
 ) -> dict:
-    if isinstance(scores, dict):
-        solo_score = scores.get("solo_social_score", 0)
-        structured_score = scores.get("structured_freeform_score", 0)
-        reasoning = scores.get("scoring_reasoning", "")
-    else:
-        solo_score = scores.solo_social_score
-        structured_score = scores.structured_freeform_score
-        reasoning = scores.reasoning
-
-    if isinstance(profile, dict):
-        profile_title = profile.get("profile_title", "")
-        profile_body = profile.get("profile_body", "")
-        activity_explanations = profile.get("activity_explanations", [])
-        closing = profile.get("closing", "")
-    else:
-        profile_title = profile.profile_title
-        profile_body = profile.profile_body
-        activity_explanations = profile.activity_explanations
-        closing = profile.closing
-
     return {
         "submission_id": submission_id,
+        "user_id": user_id,
         "personality_type": personality_type,
         "scores": {
-            "solo_social": solo_score,
-            "structured_freeform": structured_score,
-            "reasoning": reasoning,
+            "solo_social": _extract_from_obj_or_model(scores, "solo_social_score", 0),
+            "structured_freeform": _extract_from_obj_or_model(scores, "structured_freeform_score", 0),
+            "reasoning": _extract_from_obj_or_model(scores, "scoring_reasoning", ""),
         },
-        "profile_title": profile_title,
-        "profile_body": profile_body,
+        "profile_title": _extract_from_obj_or_model(profile, "profile_title"),
+        "profile_body": _extract_from_obj_or_model(profile, "profile_body"),
         "recommendations": recommendations,
-        "activity_explanations": activity_explanations,
+        "activity_explanations": _extract_from_obj_or_model(profile, "activity_explanations", []),
         "food_recommendations": food_recommendations,
         "food_recommendation_details": food_recommendation_details,
         "drink_recommendation": drink_recommendation,
         "drink_recommendation_details": drink_recommendation_details,
-        "closing": closing,
+        "closing": _extract_from_obj_or_model(profile, "closing"),
         "confidence_score": confidence,
     }
 
@@ -228,28 +212,25 @@ async def call_ai_profile(
         disliked_drinks=disliked_drinks or [],
     )
 
-    payload = {
-        "answers": [a.model_dump() for a in answers],
-        "scores": scores.model_dump(),
-        "personality_type": personality_type,
-        "activities": activities,
-        "food_items": food_items,
-        "drink_items": drink_items,
-        "system_prompt": system_prompt,
-        "disliked_activities": disliked_activities,
-        "disliked_food": disliked_food,
-        "disliked_drinks": disliked_drinks,
-    }
-
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{AI_WRAPPER_URL}/profile",
-            json=payload,
+            json={
+                "answers": [a.model_dump() for a in answers],
+                "scores": scores.model_dump(),
+                "personality_type": personality_type,
+                "activities": activities,
+                "food_items": food_items,
+                "drink_items": drink_items,
+                "system_prompt": system_prompt,
+                "disliked_activities": disliked_activities,
+                "disliked_food": disliked_food,
+                "disliked_drinks": disliked_drinks,
+            },
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        data = resp.json()
-        return ProfileResult(**data)
+        return ProfileResult(**resp.json())
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +250,11 @@ async def store_result(
     profile: ProfileResult,
     confidence: float,
     submitted_at: str | None = None,
-) -> None:
+) -> bool:
+    """Store quiz result in Supabase. Returns True on success, False on failure."""
     if not supabase_client:
         logger.warning("Supabase not configured — skipping storage")
-        return
+        return False
 
     record = {
         "submission_id": submission_id,
@@ -297,23 +279,32 @@ async def store_result(
 
     try:
         result = supabase_client.table("quiz_results").insert(record).execute()
-        if result.data:
-            logger.info(f"Stored result for {submission_id} (confidence: {confidence})")
-        else:
-            logger.warning(f"Supabase returned empty for {submission_id}")
+        if result.data and len(result.data) > 0:
+            logger.info(f"Stored result for {submission_id}")
+            return True
+        
+        logger.warning(f"Supabase returned empty for {submission_id}")
+        return False
     except Exception as e:
         logger.error(f"Failed to store result for {submission_id}: {e}")
+        
+        # Fallback with minimal fields
         minimal_fields = [
             "submission_id", "user_id", "answers",
             "solo_social_score", "structured_freeform_score",
-            "personality_type", "recommendations",
+            "personality_type", "recommendations", "confidence_score",
         ]
         minimal_record = {k: record[k] for k in minimal_fields if k in record}
+        
         try:
-            supabase_client.table("quiz_results").insert(minimal_record).execute()
-            logger.info(f"Stored minimal result for {submission_id}")
+            result = supabase_client.table("quiz_results").insert(minimal_record).execute()
+            if result.data and len(result.data) > 0:
+                logger.info(f"Stored minimal result for {submission_id}")
+                return True
+            return False
         except Exception as e2:
-            logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
+            logger.error(f"Failed to store minimal result for {submission_id}: {e2}")
+            raise RuntimeError(f"Failed to store quiz result in Supabase: {e}") from e
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +328,7 @@ async def recommend(request: RecommendRequest):
                 stored = existing.data[0]
                 return _build_response(
                     submission_id=stored["submission_id"],
+                    user_id=stored["user_id"],
                     personality_type=stored["personality_type"],
                     scores=stored,
                     profile=stored,
@@ -374,7 +366,7 @@ async def recommend(request: RecommendRequest):
             )
 
             if request.is_authenticated:
-                await store_result(
+                stored = await store_result(
                     request.submission_id,
                     request.user_id,
                     request.answers,
@@ -389,9 +381,12 @@ async def recommend(request: RecommendRequest):
                     confidence,
                     request.submitted_at,
                 )
+                if not stored:
+                    logger.error(f"Failed to store low-confidence result for {request.submission_id}")
 
             return _build_response(
                 submission_id=request.submission_id,
+                user_id=request.user_id,
                 personality_type="Unknown",
                 scores=scores,
                 profile=low_conf_profile,
@@ -407,9 +402,9 @@ async def recommend(request: RecommendRequest):
             request.answers,
             scores,
             personality_type,
-            activities=request.activities or [],
-            food_items=request.food or [],
-            drink_items=request.drinks or [],
+            activities=request.activities,
+            food_items=request.food,
+            drink_items=request.drinks,
         )
         recommendations = _extract_recommendations(profile)
         food_recommendations = _extract_food_recommendations(profile)
@@ -423,7 +418,7 @@ async def recommend(request: RecommendRequest):
         )
 
         if request.is_authenticated:
-            await store_result(
+            stored = await store_result(
                 request.submission_id,
                 request.user_id,
                 request.answers,
@@ -438,9 +433,12 @@ async def recommend(request: RecommendRequest):
                 confidence,
                 request.submitted_at,
             )
+            if not stored:
+                logger.error(f"Failed to store result for {request.submission_id}")
 
         return _build_response(
             submission_id=request.submission_id,
+            user_id=request.user_id,
             personality_type=personality_type,
             scores=scores,
             profile=profile,
