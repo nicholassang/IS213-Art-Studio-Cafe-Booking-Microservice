@@ -5,6 +5,9 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import Layout from "../../components/Layout";
 import apiClient from "../../services/apiClient";
+import { getFirstBookableDate, isFutureDaySlotSelection } from "../../utils/bookingCalendar";
+
+const TWO_HOUR_MS = 2 * 60 * 60 * 1000;
 
 export default function BookingPage() {
   const location = useLocation();
@@ -18,6 +21,7 @@ export default function BookingPage() {
   const [slotAvailability, setSlotAvailability] = useState(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const firstBookableDate = getFirstBookableDate();
 
   useEffect(() => {
     const fetchActivities = async () => {
@@ -38,6 +42,13 @@ export default function BookingPage() {
   }, []);
 
   const handleSlotSelect = async (info) => {
+    if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
+      setSelectedSlot(null);
+      setSlotAvailability(null);
+      setStatusMessage("Please choose a slot from tomorrow onward.");
+      return;
+    }
+
     setSelectedSlot(info);
     setSlotAvailability(null);
 
