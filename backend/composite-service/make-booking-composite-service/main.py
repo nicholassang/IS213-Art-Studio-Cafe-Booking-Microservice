@@ -10,9 +10,6 @@ from typing import List, Optional
 
 app = FastAPI()
 
-# the composite service is also hit directly from the browser when you run
-# services with Docker (the gateway sometimes fails or you may open the URL
-# manually), so we need CORS here as well.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -22,7 +19,7 @@ app.add_middleware(
 )
 
 ACTIVITY_URL = "http://activity-service:8000"
-MENU_URL = "http://menu-service:8000" 
+MENU_URL = "http://menu-service:8000"
 FOOD_ORDER_URL = "http://foodorder-service:8000"
 PAYMENT_URL = os.getenv("PAYMENT_URL", "http://payment-wrapper:8000")
 NOTIFICATION_URL = os.getenv("NOTIFICATION_URL", "http://notification-service:8000")
@@ -42,13 +39,10 @@ def to_minor_units(amount: float) -> int:
 def normalize_payment_method(payment_method: Optional[str]) -> str:
     if not payment_method:
         return DEFAULT_PAYMENT_METHOD
-
     normalized = payment_method.strip().lower()
     generic_card_methods = {"card", "credit_card", "credit-card", "debit_card", "debit-card"}
-
     if normalized in generic_card_methods:
         return DEFAULT_PAYMENT_METHOD
-
     return payment_method
 
 
@@ -67,25 +61,19 @@ class BookingRequest(BaseModel):
     food_items: List[FoodItem]
     payment_method: str = "card"
     additional_notes: Optional[str] = None
+    voucher_code: Optional[str] = ""  # ← new field
 
 
 async def get_slot_availability(client: httpx.AsyncClient, start_time: str, end_time: str, activity_id: str) -> dict:
     params = {"start_time": start_time, "end_time": end_time, "activity_id": activity_id}
-
-    availability_resp = await client.get(
-        f"{ACTIVITY_URL}/bookings/availability",
-        params=params,
-    )
-
+    availability_resp = await client.get(f"{ACTIVITY_URL}/bookings/availability", params=params)
     if availability_resp.status_code != 200:
         raise HTTPException(status_code=502, detail="Failed to fetch slot availability")
-
     return availability_resp.json()
 
 
 async def publish_booking_confirmation_event(event_payload: dict):
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
-
     try:
         channel = await connection.channel()
         exchange = await channel.declare_exchange(
@@ -106,19 +94,24 @@ async def publish_booking_confirmation_event(event_payload: dict):
 @app.post("/booking")
 async def create_booking(payload: BookingRequest):
     async with httpx.AsyncClient() as client:
-        # Validate activity selected first
+        # Validate activity
         activity_resp = await client.get(f"{ACTIVITY_URL}/activities/{payload.activity_id}")
         if activity_resp.status_code != 200:
             raise HTTPException(status_code=404, detail="Activity not found")
 
         activity = activity_resp.json()
+
         slot_availability = await get_slot_availability(client, payload.start_time, payload.end_time, payload.activity_id)
         if slot_availability.get("remaining_slots", 0) <= 0:
             raise HTTPException(status_code=409, detail="Selected slot is fully booked")
 
-        # Validate requested food items and create food orders using food order service
+        # Validate food items and create food orders
         food_order_responses = []
         total_amount = 0.0
+
+        # Include activity price in total
+        activity_price = float(activity.get("price", 0))
+        total_amount += activity_price
 
         for item in payload.food_items:
             menu_resp = await client.get(f"{MENU_URL}/menu/{item.id}")
@@ -134,7 +127,6 @@ async def create_booking(payload: BookingRequest):
                 "name": menu_item.get("name"),
                 "price": float(menu_item.get("price", 0)),
                 "quantity": item.quantity,
-                # Include booking-scoped fallback comment so food orders are not merged across unrelated bookings.
                 "comment": item.comment or f"booking:{payload.activity_id}:{payload.start_time}",
                 "image_url": menu_item.get("image_url", ""),
             }
@@ -145,14 +137,14 @@ async def create_booking(payload: BookingRequest):
 
             food_order_responses.append(food_resp.json().get("order"))
 
-        # process payment via wrapper
+        # Process payment via wrapper — now passing voucher_code
         payment_resp = await client.post(
             f"{PAYMENT_URL}/payment/process",
             json={
                 "Amount": to_minor_units(total_amount),
                 "Currency": PAYMENT_CURRENCY,
                 "PaymentMethod": normalize_payment_method(payload.payment_method),
-                "VoucherCode": "",
+                "VoucherCode": payload.voucher_code or "",  # ← pass voucher code
             },
         )
 
@@ -174,7 +166,10 @@ async def create_booking(payload: BookingRequest):
 
         payment = payment_resp.json()
 
-        # save booking record in activity service and/or Supabase table
+        # Use FinalAmount from payment if voucher was applied
+        final_amount = payment.get("FinalAmount", to_minor_units(total_amount)) / 100
+
+        # Save booking record
         booking_payload = {
             "user_name": payload.user_name,
             "user_email": payload.user_email,
@@ -183,7 +178,7 @@ async def create_booking(payload: BookingRequest):
             "start_time": payload.start_time,
             "end_time": payload.end_time,
             "food_orders": food_order_responses,
-            "total_amount": total_amount,
+            "total_amount": final_amount,
             "status": "confirmed",
             "payment": payment,
             "additional_notes": payload.additional_notes or "",
@@ -197,17 +192,15 @@ async def create_booking(payload: BookingRequest):
             except ValueError:
                 error_body = booking_save_resp.text
 
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "message": "Booking persistence failed",
-                    "downstream_status": booking_save_resp.status_code,
-                    "downstream_response": error_body,
-                },
-            )
+            saved_booking = {
+                "warning": "Booking created but failed to persist in booking table",
+                "error": error_body,
+                "payload": booking_payload,
+            }
+        else:
+            saved_booking = booking_save_resp.json()
 
-        saved_booking = booking_save_resp.json()
-
+        notification_result = {"success": False, "queued": False, "message": "Confirmation email not queued"}
         try:
             booking_record = saved_booking.get("booking") if isinstance(saved_booking, dict) else None
             await publish_booking_confirmation_event(
@@ -220,20 +213,20 @@ async def create_booking(payload: BookingRequest):
                     "start_time": payload.start_time,
                     "end_time": payload.end_time,
                     "food_orders": food_order_responses,
-                    "total_amount": total_amount,
+                    "total_amount": final_amount,
                     "payment": payment,
-                    "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${total_amount:.2f}",
+                    "message": f"Your booking for {activity.get('name')} is confirmed. Total: ${final_amount:.2f}",
                 }
             )
+            notification_result = {"success": True, "queued": True, "message": "Confirmation email queued for delivery"}
         except Exception as exc:
             logger.exception("Failed to publish booking confirmation event")
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "message": "Confirmation email could not be queued",
-                    "downstream_response": str(exc),
-                },
-            )
+            notification_result = {
+                "success": False,
+                "queued": False,
+                "message": "Booking confirmed but confirmation email could not be queued",
+                "error": str(exc),
+            }
 
         return {
             "success": True,
@@ -241,12 +234,8 @@ async def create_booking(payload: BookingRequest):
             "food_orders": food_order_responses,
             "payment": payment,
             "activity": activity,
-            "total_amount": total_amount,
-            "notification": {
-                "success": True,
-                "queued": True,
-                "message": "Confirmation email queued for delivery",
-            },
+            "total_amount": final_amount,
+            "notification": notification_result,
         }
 
 
@@ -258,11 +247,7 @@ async def get_booking_availability(
 ):
     async with httpx.AsyncClient() as client:
         params = {"start_time": start_time, "end_time": end_time, "activity_id": activity_id}
-
-        availability_resp = await client.get(
-            f"{ACTIVITY_URL}/bookings/availability",
-            params=params,
-        )
+        availability_resp = await client.get(f"{ACTIVITY_URL}/bookings/availability", params=params)
 
     try:
         availability_body = availability_resp.json()
@@ -277,12 +262,13 @@ async def get_booking_availability(
 
     return availability_body
 
-#Activities link to activity service(atomic service)
+
 @app.get("/activities")
 async def get_activities():
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{ACTIVITY_URL}/activities")
     return res.json()
+
 
 @app.get("/activities/category/{category}")
 async def get_by_category(category: str):
@@ -290,18 +276,20 @@ async def get_by_category(category: str):
         res = await client.get(f"{ACTIVITY_URL}/activities/category/{category}")
     return res.json()
 
+
 @app.get("/activities/{activity_id}")
 async def get_activity(activity_id: str):
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{ACTIVITY_URL}/activities/{activity_id}")
     return res.json()
 
-#Menu link to menu service(atomic service)
+
 @app.get("/menu")
 async def get_menu():
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{MENU_URL}/menu/all")
     return res.json()
+
 
 @app.get("/menu/name/{name}")
 async def get_menu_by_name(name: str):
@@ -309,11 +297,13 @@ async def get_menu_by_name(name: str):
         res = await client.get(f"{MENU_URL}/menu/name/{name}")
     return res.json()
 
+
 @app.get("/menu/{item_id}")
 async def get_menu_item(item_id: int):
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{MENU_URL}/menu/{item_id}")
     return res.json()
+
 
 @app.get("/menu/category/{category}")
 async def get_menu_by_category(category: str):
@@ -321,7 +311,7 @@ async def get_menu_by_category(category: str):
         res = await client.get(f"{MENU_URL}/menu/category/{category}")
     return res.json()
 
-#Foodorder - link to foodOrder-service(atomic service)
+
 @app.post("/food-order")
 async def create_food_order(request: Request):
     body = await request.json()
@@ -329,11 +319,13 @@ async def create_food_order(request: Request):
         res = await client.post(f"{FOOD_ORDER_URL}/food-order", json=body)
     return res.json()
 
+
 @app.get("/food-order/all")
 async def get_all_food_orders():
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{FOOD_ORDER_URL}/food-order/all")
     return res.json()
+
 
 @app.get("/food-order/{order_id}")
 async def get_food_order(order_id: int):
@@ -341,12 +333,14 @@ async def get_food_order(order_id: int):
         res = await client.get(f"{FOOD_ORDER_URL}/food-order/{order_id}")
     return res.json()
 
+
 @app.put("/food-order/{order_id}/quantity")
 async def update_food_order_quantity(order_id: int, request: Request):
     body = await request.json()
     async with httpx.AsyncClient() as client:
         res = await client.put(f"{FOOD_ORDER_URL}/food-order/{order_id}/quantity", json=body)
     return res.json()
+
 
 @app.delete("/food-order/{order_id}")
 async def delete_food_order(order_id: int):

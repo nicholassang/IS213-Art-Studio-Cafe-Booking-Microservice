@@ -36,7 +36,6 @@ const styles = `
     cursor: pointer;
     margin-bottom: 28px;
     transition: background 0.2s, color 0.2s, transform 0.2s;
-    letter-spacing: 0.02em;
   }
 
   .pay-back:hover {
@@ -96,7 +95,7 @@ const styles = `
     box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 0;
   }
 
   .pay-booking-title {
@@ -112,7 +111,7 @@ const styles = `
     height: 3px;
     background: var(--accent);
     border-radius: 2px;
-    margin-bottom: 6px;
+    margin-bottom: 20px;
   }
 
   .pay-booking-item {
@@ -120,13 +119,10 @@ const styles = `
     justify-content: space-between;
     align-items: flex-start;
     padding: 14px 0;
-    border-bottom: 1px solid #f0e6d9;
     gap: 16px;
   }
 
-  .pay-booking-item:last-child {
-    border-bottom: none;
-  }
+  .pay-booking-item:last-child { border-bottom: none; }
 
   .pay-booking-item-label {
     font-size: 0.74rem;
@@ -144,6 +140,47 @@ const styles = `
     line-height: 1.4;
   }
 
+  .pay-food-section {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .pay-food-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f5ede2;
+    font-size: 0.9rem;
+  }
+
+  .pay-food-item:last-child { border-bottom: none; }
+
+  .pay-food-name { color: var(--muted); }
+  .pay-food-price { color: var(--text); font-weight: 600; }
+
+  .pay-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0 0;
+    margin-top: 8px;
+    border-top: 2px solid var(--line);
+  }
+
+  .pay-total-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .pay-total-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
   .pay-secure-badge {
     display: flex;
     align-items: center;
@@ -154,20 +191,13 @@ const styles = `
     background: #f8f4ee;
     border: 1px solid #ece0d0;
     border-radius: 12px;
+    margin-top: 20px;
   }
 
   @media (max-width: 860px) {
-    .pay-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .pay-title {
-      font-size: 2rem;
-    }
-
-    .pay-hero {
-      padding: 26px 22px;
-    }
+    .pay-grid { grid-template-columns: 1fr; }
+    .pay-title { font-size: 2rem; }
+    .pay-hero { padding: 26px 22px; }
   }
 `;
 
@@ -175,18 +205,29 @@ export default function PaymentPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Accept booking details passed via navigation state
-  const booking = location.state?.booking || {
-    activity: "Art Session",
-    date: "To be confirmed",
-    duration: "2 hours",
-    amount: 5000, // in cents = $50.00
-    currency: "sgd",
-  };
+  // Read data passed from Cart
+  const bookingActivity = location.state?.bookingActivity ||
+    JSON.parse(sessionStorage.getItem("bookingActivity") || "null");
+  const bookingSlot = location.state?.bookingSlot ||
+    JSON.parse(sessionStorage.getItem("bookingSlot") || "null");
+  const orders = location.state?.orders || [];
+  const totalPrice = location.state?.totalPrice || bookingActivity?.price || 0;
 
-const handleSuccess = (result) => {
-  // Stay on page — PaymentForm already shows success state
-};
+  // Convert totalPrice (dollars) to cents for Stripe
+  const amountInCents = Math.round(totalPrice * 100);
+
+  // Format food items for composite service
+  const foodItems = orders.map((o) => ({
+    id: o.menu_item_id,
+    quantity: o.quantity,
+    comment: o.comment || "",
+  }));
+
+  const handleSuccess = (result) => {
+    // Clear session storage after successful payment
+    sessionStorage.removeItem("bookingActivity");
+    sessionStorage.removeItem("bookingSlot");
+  };
 
   return (
     <>
@@ -194,66 +235,101 @@ const handleSuccess = (result) => {
       <Layout>
         <div className="pay-root">
           <button className="pay-back" onClick={() => navigate(-1)}>
-            ← Back
+            ← Back to Cart
           </button>
 
           <div className="pay-hero">
             <span className="pay-eyebrow">Secure Checkout</span>
             <h1 className="pay-title">Complete Your Booking 🎨</h1>
             <p className="pay-subtitle">
-              You're almost there! Review your booking details and complete payment to secure your spot at the studio.
+              Review your booking and complete payment to secure your spot at the studio.
             </p>
           </div>
 
           <div className="pay-grid">
-            {/* Booking summary */}
+            {/* Booking Summary */}
             <div className="pay-booking-card">
-              <div>
-                <h3 className="pay-booking-title">Booking Summary</h3>
-                <div className="pay-booking-divider" />
-              </div>
+              <h3 className="pay-booking-title">Booking Summary</h3>
+              <div className="pay-booking-divider" />
 
-              <div>
+              {/* Activity */}
+              {bookingActivity && (
                 <div className="pay-booking-item">
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div className="pay-booking-item-label">Activity</div>
-                    <div className="pay-booking-item-value">{booking.activity}</div>
+                    <div className="pay-booking-item-value">{bookingActivity.name}</div>
                   </div>
-                </div>
-
-                <div className="pay-booking-item">
-                  <div>
-                    <div className="pay-booking-item-label">Date & Time</div>
-                    <div className="pay-booking-item-value">{booking.date}</div>
-                  </div>
-                </div>
-
-                <div className="pay-booking-item">
-                  <div>
-                    <div className="pay-booking-item-label">Duration</div>
-                    <div className="pay-booking-item-value">{booking.duration}</div>
-                  </div>
-                </div>
-
-                <div className="pay-booking-item">
-                  <div>
-                    <div className="pay-booking-item-label">Amount</div>
-                    <div className="pay-booking-item-value" style={{ fontSize: "1.2rem", fontWeight: 700 }}>
-                      ${(booking.amount / 100).toFixed(2)} {booking.currency?.toUpperCase()}
+                  <div style={{ textAlign: "right" }}>
+                    <div className="pay-booking-item-label">Price</div>
+                    <div className="pay-booking-item-value" style={{ fontWeight: 700 }}>
+                      ${bookingActivity.price?.toFixed(2)}
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* Time Slot */}
+              {bookingSlot && (
+                <div className="pay-booking-item">
+                  <div>
+                    <div className="pay-booking-item-label">Date & Time</div>
+                    <div className="pay-booking-item-value" style={{ fontSize: "0.9rem" }}>
+                      {new Date(bookingSlot.start).toLocaleString()} —{" "}
+                      {new Date(bookingSlot.end).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Duration */}
+              {bookingActivity?.duration && (
+                <div className="pay-booking-item">
+                  <div>
+                    <div className="pay-booking-item-label">Duration</div>
+                    <div className="pay-booking-item-value">{bookingActivity.duration}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Food Orders */}
+              {orders.length > 0 && (
+                <div className="pay-booking-item" style={{ flexDirection: "column", alignItems: "flex-start" }}>
+                  <div className="pay-booking-item-label" style={{ marginBottom: "8px" }}>
+                    Food & Drinks
+                  </div>
+                  <div className="pay-food-section" style={{ width: "100%" }}>
+                    {orders.map((item) => (
+                      <div key={item.order_id} className="pay-food-item">
+                        <span className="pay-food-name">
+                          {item.name} ×{item.quantity}
+                        </span>
+                        <span className="pay-food-price">
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Total */}
+              <div className="pay-total-row">
+                <span className="pay-total-label">Total</span>
+                <span className="pay-total-value">${totalPrice.toFixed(2)} SGD</span>
               </div>
 
               <div className="pay-secure-badge">
-                🔒 Payments are processed securely via Stripe. Your card details are never stored.
+                🔒 Payments processed securely via Stripe. Card details are never stored.
               </div>
             </div>
 
-            {/* Payment form */}
+            {/* Payment Form */}
             <PaymentForm
-              amount={booking.amount}
-              currency={booking.currency}
+              amount={amountInCents}
+              currency="sgd"
+              bookingActivity={bookingActivity}
+              bookingSlot={bookingSlot}
+              foodItems={foodItems}
               onSuccess={handleSuccess}
             />
           </div>
