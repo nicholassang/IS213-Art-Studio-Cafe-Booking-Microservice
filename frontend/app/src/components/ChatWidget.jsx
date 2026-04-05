@@ -576,14 +576,21 @@ export default function ChatWidget() {
   const [editingQuestionId, setEditingQuestionId] = useState(null);
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
-  // Listen for custom event to reopen the quiz (from ResultPage retake button)
+  // Listen for custom events to open / reopen the quiz
   useEffect(() => {
     const handleRetakeQuiz = () => {
       resetQuiz();
       setIsOpen(true);
     };
+    const handleOpenQuiz = () => {
+      setIsOpen(true);
+    };
     window.addEventListener("retake-quiz", handleRetakeQuiz);
-    return () => window.removeEventListener("retake-quiz", handleRetakeQuiz);
+    window.addEventListener("open-quiz", handleOpenQuiz);
+    return () => {
+      window.removeEventListener("retake-quiz", handleRetakeQuiz);
+      window.removeEventListener("open-quiz", handleOpenQuiz);
+    };
   }, []);
 
   // When auth changes, reset all quiz state so startSession re-runs for the new user

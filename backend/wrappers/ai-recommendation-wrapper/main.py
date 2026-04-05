@@ -2,6 +2,7 @@ import json
 import logging
 import re
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from groq import AsyncGroq
 from google import genai
@@ -9,11 +10,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from prompts import (
-    SCORING_SYSTEM_PROMPT,
-    build_profile_system_prompt,
-)
-
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -30,16 +27,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
 
-    supabase_url: str = ""
-    supabase_key: str = ""
-
 
 settings = Settings()
-
-supabase_client = None
-if settings.supabase_url and settings.supabase_key:
-    from supabase import create_client
-    supabase_client = create_client(settings.supabase_url, settings.supabase_key)
 
 groq_client = AsyncGroq(api_key=settings.groq_api_key)
 gemini_client = None
@@ -48,35 +37,12 @@ if settings.gemini_api_key:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _require_supabase():
-    """Raise 503 if Supabase is not configured."""
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not configured")
-
-
-def _supabase_fetch(description: str, query, allow_empty: bool = False):
-    """Execute a Supabase query with standardized error handling."""
-    try:
-        result = query.execute()
-        if not result.data and not allow_empty:
-            raise HTTPException(status_code=404, detail="Results not found")
-        return result.data or []
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to {description}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="AI Recommendation Service",
-    description="Receives Q&A from composite, scores and profiles the user, returns recommendations.",
-    version="2.0.0",
+    title="AI Recommendation Wrapper",
+    description="Wrapper that calls Groq and Gemini AI APIs for scoring and profiling.",
+    version="1.0.0",
 )
 
 
@@ -90,34 +56,26 @@ class QuizAnswer(BaseModel):
     answer_text: str
 
 
-class RecommendRequest(BaseModel):
-    submission_id: str
-    user_id: str
+class ScoreRequest(BaseModel):
     answers: list[QuizAnswer] = Field(..., min_length=1)
-    submitted_at: str | None = None
-    is_authenticated: bool = True
-    activities: list[str] | None = None
-    food: list[str] | None = None
-    drinks: list[str] | None = None
+    system_prompt: str
 
 
-class ScoringResult(BaseModel):
-    solo_social_score: int = Field(..., ge=0, le=10)
-    structured_freeform_score: int = Field(..., ge=0, le=10)
-    reasoning: str
-
-
-class ProfileResult(BaseModel):
-    profile_title: str
-    profile_body: str
-    activity_explanations: list[dict]
-    food_recommendations: list[dict]
-    drink_recommendation: dict
-    closing: str
+class ProfileRequest(BaseModel):
+    answers: list[QuizAnswer]
+    scores: dict
+    personality_type: str
+    activities: list[str]
+    food_items: list[str]
+    drink_items: list[str]
+    system_prompt: str
+    disliked_activities: list[str] | None = None
+    disliked_food: list[str] | None = None
+    disliked_drinks: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
-# AI helpers
+# AI call functions
 # ---------------------------------------------------------------------------
 async def _call_groq(system_prompt: str, user_prompt: str, temperature: float) -> str:
     completion = await groq_client.chat.completions.create(
@@ -163,48 +121,6 @@ def _parse_json_response(text: str) -> dict:
     return json.loads(match.group())
 
 
-def _map_scores(solo_social: int, structured_freeform: int) -> str:
-    """Map axis scores to personality type."""
-    social = solo_social >= 5
-    freeform = structured_freeform >= 5
-
-    if social and not freeform:
-        return "Workshop Goer"
-    elif social and freeform:
-        return "Free Spirit"
-    elif not social and not freeform:
-        return "Craftsman"
-    else:
-        return "Dreamer"
-
-
-# FIX: confidence based on answer detail + score distinctiveness
-def _compute_confidence(
-    solo_social_score: int,
-    structured_freeform_score: int,
-    answers: list[QuizAnswer] | None = None,
-) -> float:
-    """
-    Confidence = how much we trust this result.
-    - One-word/gibberish answers → below threshold, no recommendations.
-    - Brief but meaningful answers → pass, moderate confidence.
-    - Thoughtful answers + distinct scores → high confidence.
-    """
-    # Score distinctiveness (max 0.20) — distinct preferences add confidence
-    solo_deviation = abs(solo_social_score - 5) / 5.0
-    structured_deviation = abs(structured_freeform_score - 5) / 5.0
-    score_confidence = ((solo_deviation + structured_deviation) / 2) * 0.20
-
-    # Answer quality (max 0.40) — ~100 chars avg → full credit
-    answer_quality = 0.0
-    if answers:
-        avg_len = sum(len(a.answer_text.strip()) for a in answers) / len(answers)
-        answer_quality = min(avg_len / 100.0, 1.0) * 0.40
-
-    # Base floor 0.40
-    return round(0.40 + score_confidence + answer_quality, 2)
-
-
 def _format_answers(answers: list[QuizAnswer]) -> str:
     lines = []
     for i, a in enumerate(answers, 1):
@@ -214,378 +130,43 @@ def _format_answers(answers: list[QuizAnswer]) -> str:
     return "\n".join(lines)
 
 
-def _extract_recommendations(profile: ProfileResult) -> list[str]:
-    return [
-        item["activity"]
-        for item in sorted(profile.activity_explanations, key=lambda x: x["rank"])
-    ]
-
-
-def _extract_food_recommendations(profile: ProfileResult) -> list[str]:
-    return [
-        item["food"]
-        for item in sorted(profile.food_recommendations, key=lambda x: x["rank"])
-    ]
-
-
-def _build_response(
-    submission_id: str,
-    personality_type: str,
-    scores: ScoringResult | dict,
-    profile: ProfileResult | dict,
-    recommendations: list[str],
-    food_recommendations: list[str],
-    food_recommendation_details: list[dict],
-    drink_recommendation: str,
-    drink_recommendation_details: dict,
-    confidence: float,
-) -> dict:
-    """Build standardized recommendation response dict."""
-    if isinstance(scores, dict):
-        solo_score = scores.get("solo_social_score", 0)
-        structured_score = scores.get("structured_freeform_score", 0)
-        reasoning = scores.get("scoring_reasoning", "")
-    else:
-        solo_score = scores.solo_social_score
-        structured_score = scores.structured_freeform_score
-        reasoning = scores.reasoning
-
-    if isinstance(profile, dict):
-        profile_title = profile.get("profile_title", "")
-        profile_body = profile.get("profile_body", "")
-        activity_explanations = profile.get("activity_explanations", [])
-        closing = profile.get("closing", "")
-    else:
-        profile_title = profile.profile_title
-        profile_body = profile.profile_body
-        activity_explanations = profile.activity_explanations
-        closing = profile.closing
-
-    return {
-        "submission_id": submission_id,
-        "personality_type": personality_type,
-        "scores": {
-            "solo_social": solo_score,
-            "structured_freeform": structured_score,
-            "reasoning": reasoning,
-        },
-        "profile_title": profile_title,
-        "profile_body": profile_body,
-        "recommendations": recommendations,
-        "activity_explanations": activity_explanations,
-        "food_recommendations": food_recommendations,
-        "food_recommendation_details": food_recommendation_details,
-        "drink_recommendation": drink_recommendation,
-        "drink_recommendation_details": drink_recommendation_details,
-        "closing": closing,
-        "confidence_score": confidence,
-    }
-
-
 # ---------------------------------------------------------------------------
-# Call 1 — Scoring (temperature: 0)
+# Endpoints — called by ai-recommender-service
 # ---------------------------------------------------------------------------
-async def score_answers(answers: list[QuizAnswer]) -> ScoringResult:
+@app.post("/score")
+async def score(request: ScoreRequest):
+    """Call AI to score quiz answers. Returns solo_social_score, structured_freeform_score, reasoning."""
     user_prompt = (
         "Customer's Quiz Responses:\n\n"
-        + _format_answers(answers)
+        + _format_answers(request.answers)
         + "Score this customer on the Solo↔Social and Structured↔Freeform axes."
     )
-    response_text = await _call_ai(SCORING_SYSTEM_PROMPT, user_prompt, temperature=0)
-    return ScoringResult(**_parse_json_response(response_text))
+    response_text = await _call_ai(request.system_prompt, user_prompt, temperature=0)
+    return _parse_json_response(response_text)
 
 
-# ---------------------------------------------------------------------------
-# Call 2 — Profile write-up (temperature: 0.7)
-# ---------------------------------------------------------------------------
-async def generate_profile(
-    answers: list[QuizAnswer],
-    scores: ScoringResult,
-    personality_type: str,
-    activities: list[str],
-    food_items: list[str],
-    drink_items: list[str],
-    disliked_activities: list[str] | None = None,
-    disliked_food: list[str] | None = None,
-    disliked_drinks: list[str] | None = None,
-) -> ProfileResult:
-    disliked_activities = disliked_activities or []
-    disliked_food = disliked_food or []
-    disliked_drinks = disliked_drinks or []
+@app.post("/profile")
+async def profile(request: ProfileRequest):
+    """Call AI to generate a personalised profile. Returns profile_title, profile_body, activity_explanations, etc."""
+    disliked_activities = request.disliked_activities or []
+    disliked_food = request.disliked_food or []
+    disliked_drinks = request.disliked_drinks or []
 
     user_prompt = (
         "Customer's Quiz Responses:\n\n"
-        + _format_answers(answers)
-        + f"Personality Type: {personality_type}\n"
-        + f"Solo↔Social Score: {scores.solo_social_score}/10\n"
-        + f"Structured↔Freeform Score: {scores.structured_freeform_score}/10\n"
-        + f"Scoring Reasoning: {scores.reasoning}\n\n"
+        + _format_answers(request.answers)
+        + f"Personality Type: {request.personality_type}\n"
+        + f"Solo↔Social Score: {request.scores.get('solo_social_score')}/10\n"
+        + f"Structured↔Freeform Score: {request.scores.get('structured_freeform_score')}/10\n"
+        + f"Scoring Reasoning: {request.scores.get('reasoning')}\n\n"
         + "Write a personalised profile for this customer."
     )
-    system_prompt = build_profile_system_prompt(
-        personality_type,
-        scores.model_dump(),
-        activities=activities,
-        food_items=food_items,
-        drink_items=drink_items,
-        disliked_activities=disliked_activities,
-        disliked_food=disliked_food,
-        disliked_drinks=disliked_drinks,
-    )
-    response_text = await _call_ai(system_prompt, user_prompt, temperature=0.7)
-    return ProfileResult(**_parse_json_response(response_text))
-
-
-# ---------------------------------------------------------------------------
-# Supabase storage
-# ---------------------------------------------------------------------------
-async def store_result(
-    submission_id: str,
-    user_id: str,
-    answers: list[QuizAnswer],
-    scores: ScoringResult,
-    personality_type: str,
-    recommendations: list[str],
-    food_recommendations: list[str],
-    food_recommendation_details: list[dict],
-    drink_recommendation: str,
-    drink_recommendation_details: dict,
-    profile: ProfileResult,
-    confidence: float,
-    submitted_at: str | None = None,
-) -> None:
-    if not supabase_client:
-        logger.warning("Supabase not configured — skipping storage")
-        return
-
-    record = {
-        "submission_id": submission_id,
-        "user_id": user_id,
-        "answers": [a.model_dump() for a in answers],
-        "solo_social_score": scores.solo_social_score,
-        "structured_freeform_score": scores.structured_freeform_score,
-        "scoring_reasoning": scores.reasoning,
-        "personality_type": personality_type,
-        "recommendations": recommendations,
-        # FIX: store food and drink fields so GET /quiz/results returns complete data
-        "food_recommendations": food_recommendations,
-        "food_recommendation_details": food_recommendation_details,
-        "drink_recommendation": drink_recommendation,
-        "drink_recommendation_details": drink_recommendation_details,
-        "profile_title": profile.profile_title,
-        "profile_body": profile.profile_body,
-        "activity_explanations": profile.activity_explanations,
-        "closing": profile.closing,
-        # FIX: confidence passed in from recommend() — no recalculation here
-        "confidence_score": confidence,
-        "submitted_at": submitted_at,
-    }
-
-    try:
-        result = supabase_client.table("quiz_results").insert(record).execute()
-        if result.data:
-            logger.info(f"Stored result for {submission_id} (confidence: {confidence})")
-        else:
-            logger.warning(f"Supabase returned empty for {submission_id}")
-    except Exception as e:
-        logger.error(f"Failed to store result for {submission_id}: {e}")
-        # Fallback: store minimal record if full storage fails
-        minimal_fields = [
-            "submission_id", "user_id", "answers",
-            "solo_social_score", "structured_freeform_score",
-            "personality_type", "recommendations",
-        ]
-        minimal_record = {k: record[k] for k in minimal_fields if k in record}
-        try:
-            supabase_client.table("quiz_results").insert(minimal_record).execute()
-            logger.info(f"Stored minimal result for {submission_id}")
-        except Exception as e2:
-            logger.error(f"Failed to store even minimal result for {submission_id}: {e2}")
-
-
-# ---------------------------------------------------------------------------
-# Main endpoint — called by composite with Q&A from quiz atomic
-# ---------------------------------------------------------------------------
-@app.post("/recommend")
-async def recommend(request: RecommendRequest):
-    """
-    Receive Q&A from the composite, run AI scoring + profile generation,
-    store result in Supabase, and return the full recommendation to the composite.
-    """
-    logger.info(f"Processing recommendation for submission {request.submission_id}")
-
-    # FIX: idempotency guard — if a result already exists, return it without re-running AI
-    if supabase_client:
-        try:
-            existing = (
-                supabase_client.table("quiz_results")
-                .select("*")
-                .eq("submission_id", request.submission_id)
-                .execute()
-            )
-            if existing.data:
-                logger.info(
-                    f"Result already exists for {request.submission_id}, returning stored result"
-                )
-                stored = existing.data[0]
-                return _build_response(
-                    submission_id=stored["submission_id"],
-                    personality_type=stored["personality_type"],
-                    scores=stored,
-                    profile=stored,
-                    recommendations=stored["recommendations"],
-                    food_recommendations=stored.get("food_recommendations", []),
-                    food_recommendation_details=stored.get("food_recommendation_details", []),
-                    drink_recommendation=stored.get("drink_recommendation", ""),
-                    drink_recommendation_details=stored.get("drink_recommendation_details", {}),
-                    confidence=stored["confidence_score"],
-                )
-        except Exception as e:
-            logger.warning(f"Could not check for existing result for {request.submission_id}: {e}")
-
-    try:
-        scores = await score_answers(request.answers)
-        personality_type = _map_scores(scores.solo_social_score, scores.structured_freeform_score)
-        logger.info(
-            f"Scored: Solo↔Social={scores.solo_social_score}, "
-            f"Structured↔Freeform={scores.structured_freeform_score} → {personality_type}"
-        )
-
-        # FIX: compute confidence once, check before expensive profile generation
-        confidence = _compute_confidence(scores.solo_social_score, scores.structured_freeform_score, request.answers)
-
-        # When confidence is below 50 %, answers were too brief to categorise or recommend.
-        if confidence < 0.50:
-            low_conf_profile = ProfileResult(
-                profile_title="We'd love to know you better",
-                profile_body=(
-                    "Your answers were a bit too brief for us to build a meaningful personality profile. "
-                    "We didn't want to guess — your creative preferences deserve more than a wild stab in the dark. "
-                    "Try retaking the quiz with a few more details about what you enjoy, and we'll have a much clearer picture next time."
-                ),
-                activity_explanations=[],
-                food_recommendations=[],
-                drink_recommendation={"drink": "", "explanation": ""},
-                closing="Take your time, share a bit more about yourself, and we'll find something perfect for you. ☕",
-            )
-
-            if request.is_authenticated:
-                await store_result(
-                    request.submission_id,
-                    request.user_id,
-                    request.answers,
-                    scores,
-                    "Unknown",
-                    [],
-                    [],
-                    [],
-                    "",
-                    {},
-                    low_conf_profile,
-                    confidence,
-                    request.submitted_at,
-                )
-
-            return _build_response(
-                submission_id=request.submission_id,
-                personality_type="Unknown",
-                scores=scores,
-                profile=low_conf_profile,
-                recommendations=[],
-                food_recommendations=[],
-                food_recommendation_details=[],
-                drink_recommendation="",
-                drink_recommendation_details={},
-                confidence=confidence,
-            )
-
-        # Confidence passed — generate the full profile
-        profile = await generate_profile(
-            request.answers,
-            scores,
-            personality_type,
-            activities=request.activities or [],
-            food_items=request.food or [],
-            drink_items=request.drinks or [],
-        )
-        recommendations = _extract_recommendations(profile)
-        food_recommendations = _extract_food_recommendations(profile)
-        drink_recommendation = profile.drink_recommendation.get("drink", "")
-
-        logger.info(
-            f"Profile generated: {profile.profile_title} | "
-            f"Activities: {recommendations} | "
-            f"Food: {food_recommendations} | "
-            f"Drink: {drink_recommendation}"
-        )
-
-        if request.is_authenticated:
-            await store_result(
-                request.submission_id,
-                request.user_id,
-                request.answers,
-                scores,
-                personality_type,
-                recommendations,
-                food_recommendations,
-                profile.food_recommendations,
-                drink_recommendation,
-                profile.drink_recommendation,
-                profile,
-                confidence,
-                request.submitted_at,
-            )
-
-        return _build_response(
-            submission_id=request.submission_id,
-            personality_type=personality_type,
-            scores=scores,
-            profile=profile,
-            recommendations=recommendations,
-            food_recommendations=food_recommendations,
-            food_recommendation_details=profile.food_recommendations,
-            drink_recommendation=drink_recommendation,
-            drink_recommendation_details=profile.drink_recommendation,
-            confidence=confidence,
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to generate recommendation for {request.submission_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
-
-
-# ---------------------------------------------------------------------------
-# Result retrieval — composite fetches stored results by submission_id
-# ---------------------------------------------------------------------------
-@app.get("/quiz/results/{submission_id}")
-async def get_quiz_results(submission_id: str):
-    """Fetch AI-generated results for a submission from Supabase."""
-    _require_supabase()
-    result = _supabase_fetch(
-        f"fetch results for {submission_id}",
-        supabase_client.table("quiz_results").select("*").eq("submission_id", submission_id),
-    )
-    return result[0]
-
-
-@app.get("/quiz/user-results")
-async def get_user_results(user_id: str):
-    """Fetch all AI-generated results for a given user from Supabase."""
-    _require_supabase()
-    result = _supabase_fetch(
-        f"fetch results for user {user_id}",
-        supabase_client.table("quiz_results")
-        .select("submission_id, personality_type, confidence_score, submitted_at")
-        .eq("user_id", user_id)
-        .order("submission_id", desc=True),
-        allow_empty=True,
-    )
-    return {"results": result}
+    response_text = await _call_ai(request.system_prompt, user_prompt, temperature=0.7)
+    return _parse_json_response(response_text)
 
 
 # ---------------------------------------------------------------------------
 # Health
-# FIX: Gemini is optional — its absence should not mark the service unhealthy
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():

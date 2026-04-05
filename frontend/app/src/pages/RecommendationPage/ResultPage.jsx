@@ -683,8 +683,8 @@ export default function ResultPage() {
 
         const data = await res.json();
 
-        // Check if AI recommendation is ready
-        if (!data.recommendation) {
+        // Backend returns the result directly — check for required fields
+        if (!data.personality_type && !data.recommendation) {
           polls++;
           if (polls >= MAX_POLLS) {
             clearInterval(intervalId);
@@ -695,7 +695,7 @@ export default function ResultPage() {
         }
 
         clearInterval(intervalId);
-        const rec = data.recommendation;
+        const rec = data.recommendation || data;
         setResult(rec);
         setLoading(false);
 

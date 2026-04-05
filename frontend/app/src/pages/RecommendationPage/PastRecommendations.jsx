@@ -406,23 +406,6 @@ export default function PastRecommendations() {
   return (
     <>
       <style>{styles}</style>
-      {!user ? (
-        <div className="past-root">
-          <div className="past-content">
-            <div className="past-header">
-              <span className="past-header-brand">Café de <span>Paris</span></span>
-              <button className="past-header-back" onClick={() => navigate("/")}>← Back</button>
-            </div>
-            <div className="past-loading">
-              <div className="past-loader-ring" />
-              <p className="past-loading-title">Please log in to view past recommendations.</p>
-              <button className="past-login-btn" onClick={() => navigate("/login")}>
-                Go to Login
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
       <div className="past-root">
         <div className="past-header">
           <span className="past-header-brand">Café de <span>Paris</span></span>
@@ -437,13 +420,21 @@ export default function PastRecommendations() {
               : "No quiz results yet"}
           </p>
 
-          {results.length === 0 ? (
+          {!user ? (
             <div className="past-empty">
               <div className="past-empty-icon">✦</div>
               <p className="past-empty-text">
-                {user
-                  ? "You haven't taken the quiz yet. Open the chat widget to discover your creative personality!"
-                  : "No results found for your account."}
+                Please log in to view your past recommendations.
+              </p>
+              <button className="past-login-btn" onClick={() => navigate("/login")}>
+                Go to Login
+              </button>
+            </div>
+          ) : results.length === 0 ? (
+            <div className="past-empty">
+              <div className="past-empty-icon">✦</div>
+              <p className="past-empty-text">
+                You haven't taken the quiz yet. Open the chat widget to discover your creative personality!
               </p>
             </div>
           ) : (
@@ -491,7 +482,6 @@ export default function PastRecommendations() {
           )}
         </div>
       </div>
-      )}
     </>
   );
 }

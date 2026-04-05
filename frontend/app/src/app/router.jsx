@@ -28,54 +28,46 @@ const LayoutWithChat = ({ ChatWidget }) => (
 
 export const router = (user, ChatWidget) =>
   createBrowserRouter([
-    // home
-    { path: "/", element: <HomePage /> },
-    // auth 
-    { path: "/login", element: <LoginPage /> },
-    { path: "/register", element: <RegisterPage /> },
     {
-      path: "/activities",
-      element: <ActivityList />,
+      element: <LayoutWithChat ChatWidget={ChatWidget} />,
+      children: [
+        // home
+        { path: "/", element: <HomePage /> },
+        // auth
+        { path: "/login", element: <LoginPage /> },
+        { path: "/register", element: <RegisterPage /> },
+        {
+          path: "/activities",
+          element: <ActivityList />,
+        },
+        {
+          path: "/activity/:id",
+          element: <ActivityDetail />,
+        },
+        { path: "/booking", element: <BookingPage /> },
+        {
+          path: "/menu",
+          element: <FoodMenu />,
+        },
+        {
+          path: "/menu/:id",
+          element: <FoodDetail />
+        },
+        {
+          path: "/cart",
+          element: <Cart />
+        },
+        {
+          path: "/saved-experiences",
+          element: <SavedExperiences />
+        },
+        {
+          path: "/payment",
+          element: <PaymentPage />,
+        },
+        { path: "/quiz/result/:submissionId", element: <ResultPage /> },
+        { path: "/my-recommendations", element: <PastRecommendations /> },
+      ],
     },
-    {
-      path: "/activity/:id",
-      element: <ActivityDetail />,
-    },
-
-    { path: "/booking", element: <BookingPage /> },
-    // AI quiz
-   // {
-      //path: "/quiz",
-      //element: <Questionnaire />
-    //},
-    // quiz result
-    //{
-      //path: "/quiz/result/:submissionId",
-      //element: <Recommendation />
-    //},
-
-    {
-      path: "/menu",
-      element: <FoodMenu />,
-    },
-    {
-      path: "/menu/:id",
-      element: <FoodDetail />
-    },
-    {
-      path: "/cart",
-      element: <Cart />
-    },
-    {
-      path: "/saved-experiences",
-      element: <SavedExperiences />
-    },
-    {
-      path: "/payment",
-      element: <PaymentPage />,
-    },
-
-    { path: "/quiz/result/:submissionId", element: <ResultPage /> },
-    { path: "/my-recommendations", element: <PastRecommendations /> },
   ]);
 

@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 QUIZ_URL = "http://quiz-service:8000"
-AI_URL = "http://ai-recommendation-wrapper:8000"
+AI_URL = "http://ai-recommender-service:8000"
 MAKE_BOOKING_URL = os.getenv("MAKE_BOOKING_URL", "http://composite-service:8000")
 
 # Default timeout for passthrough routes

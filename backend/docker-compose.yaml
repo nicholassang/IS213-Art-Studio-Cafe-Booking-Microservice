@@ -122,24 +122,8 @@ services:
         condition: service_healthy
       ai-recommender-composite-service:
         condition: service_started
-
-  # Legacy gateway retained for reference only.
-  # It is disabled by default and only starts when profile `legacy-gateway` is enabled.
-  api-gateway-legacy:
-    profiles: ["legacy-gateway"]
-    build: ./api-gateway
-    container_name: api-gateway-legacy
-    ports:
-      - "8008:8000"
-    environment:
-      - COMPOSITE_URL=http://composite-service:8000
-      - AI_RECOMMENDER_COMPOSITE_URL=http://ai-recommender-composite-service:8000
-      - ACTIVITY_URL=http://activity-service:8000
-    depends_on:
-      - user-service
-      - composite-service
-      - activity-service
-      - ai-recommender-composite-service
+      ai-recommender-service:
+        condition: service_started
 
   user-service:
     build: ./services/user-service
@@ -163,14 +147,12 @@ services:
     container_name: make-booking-composite-service
     environment:
       - AUTH_URL=http://auth-service:8000
-      - AI_RECOMMENDATION_URL=http://ai-recommendation-wrapper:8000
       - PAYMENT_URL=http://payment-wrapper:8000
       - NOTIFICATION_URL=http://notification-service:8000
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       - rabbitmq
       - user-service
-      - ai-recommendation-wrapper
       - payment-wrapper
       - menu-service
       - foodorder-service
@@ -184,7 +166,19 @@ services:
       - MAKE_BOOKING_URL=http://composite-service:8000
     depends_on:
       - quiz-service
+      - ai-recommender-service
+
+  ai-recommender-service:
+    build: ./services/ai-recommender-service
+    container_name: ai-recommender-service
+    env_file:
+      - ./wrappers/ai-recommendation-wrapper/.env
+    environment:
+      - AI_WRAPPER_URL=http://ai-recommendation-wrapper:8000
+    depends_on:
       - ai-recommendation-wrapper
+    ports:
+      - "8015:8000"
 
   ai-recommendation-wrapper:
     build: ./wrappers/ai-recommendation-wrapper
