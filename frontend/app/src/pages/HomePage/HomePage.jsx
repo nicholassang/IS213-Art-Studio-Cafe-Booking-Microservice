@@ -658,10 +658,10 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="home-booking-wrap">
+{/*               <div className="home-booking-wrap">
                 <h2 className="home-section-heading">Start your booking</h2>
                 <BookingPage />
-              </div>
+              </div> */}
             </>
           )}
         </div>

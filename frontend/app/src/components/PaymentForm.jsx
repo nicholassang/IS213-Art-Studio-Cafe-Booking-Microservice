@@ -316,6 +316,7 @@ export default function PaymentForm({
 }) {
   const { user } = useAuth();
 
+  const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [cardNumber, setCardNumber] = useState("");
   const [expiry, setExpiry] = useState("");
   const [cvc, setCvc] = useState("");
@@ -331,6 +332,12 @@ export default function PaymentForm({
   const timerRef = useRef(null);
   const finalAmount = voucher ? voucher.finalAmount : amount;
   const saving = voucher ? voucher.saving : 0;
+
+  useEffect(() => {
+    if (user?.email && !contactEmail.trim()) {
+      setContactEmail(user.email);
+    }
+  }, [user?.email]);
 
   // On mount: create PaymentIntent + start timer
   useEffect(() => {
@@ -386,7 +393,21 @@ export default function PaymentForm({
     return digits;
   };
 
+  const isValidEmail = (value) => /\S+@\S+\.\S+/.test(value);
+
   const handleSubmit = async () => {
+    const trimmedEmail = contactEmail.trim();
+
+    if (!trimmedEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    if (!isValidEmail(trimmedEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
     if (!cardNumber || !expiry || !cvc) {
       setError("Please fill in all card details.");
       return;
@@ -399,7 +420,7 @@ export default function PaymentForm({
       // Call composite /booking endpoint — it handles payment + booking creation
       const res = await apiClient.post("/booking", {
         user_name: user?.username || "guest",
-        user_email: user?.email || `${user?.username || "guest"}@example.com`,
+        user_email: trimmedEmail,
         activity_id: bookingActivity?.id,
         start_time: bookingSlot?.start,
         end_time: bookingSlot?.end,
@@ -527,6 +548,19 @@ export default function PaymentForm({
           </div>
         ) : (
           <>
+            <div className="pf-field-group">
+              <span className="pf-label">Confirmation Email</span>
+              <input
+                className="pf-input"
+                type="email"
+                placeholder="Enter your email address"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                disabled={loading || secondsLeft === 0}
+                required
+              />
+            </div>
+
             <div className="pf-field-group">
               <span className="pf-label">Card Number</span>
               <input
