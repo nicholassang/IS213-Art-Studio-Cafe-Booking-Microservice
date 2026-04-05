@@ -81,40 +81,101 @@ export default function Cart() {
               <span className="cart-eyebrow">Checkout</span>
               <h1 className="cart-title">Your Cart 🛒</h1>
             </div>
-            <button
-              className="cart-back-btn"
-              onClick={() =>
-                navigate("/menu", { state: { bookingActivity, bookingSlot } })
-              }
-            >
-              ← Add More Food
-            </button>
+            <div className="cart-hero-actions">
+              <button className="cart-home-btn" onClick={() => navigate("/")}>
+                🏠 Home
+              </button>
+              <button
+                className="cart-back-btn"
+                onClick={() =>
+                  navigate("/menu", { state: { bookingActivity, bookingSlot } })
+                }
+              >
+                ← Add More Food
+              </button>
+            </div>
           </section>
 
           {/* Booking Summary Card */}
           {bookingActivity && (
             <div className="cart-booking-card">
-              <span className="cart-booking-label">Your Booking</span>
-              <div className="cart-booking-row">
-                <div>
-                  <p className="cart-booking-field-label">Activity</p>
-                  <p className="cart-booking-field-value">{bookingActivity.name}</p>
+              <div className="cart-booking-card-header">
+                <div className="cart-booking-card-title-row">
+                  <span className="cart-booking-label">🎨 Your Booking</span>
+                  <div className="cart-booking-actions">
+                    <button
+                      className="cart-booking-edit-btn"
+                      onClick={() => navigate(`/activity/${bookingActivity.id}`)}
+                    >
+                      View Activity
+                    </button>
+                    <button
+                      className="cart-booking-edit-btn cart-booking-edit-btn--primary"
+                      onClick={() =>
+                        navigate("/booking", {
+                          state: { activity: bookingActivity },
+                        })
+                      }
+                    >
+                      ✏️ Edit Time Slot
+                    </button>
+                  </div>
                 </div>
-                {bookingSlot && (
-                  <div>
-                    <p className="cart-booking-field-label">Time Slot</p>
-                    <p className="cart-booking-field-value" style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.95rem" }}>
-                      {new Date(bookingSlot.start).toLocaleString()} —{" "}
-                      {new Date(bookingSlot.end).toLocaleString()}
+              </div>
+
+              <div className="cart-booking-body">
+                {/* Activity image + info */}
+                <div className="cart-booking-activity-row">
+                  {bookingActivity.image && (
+                    <img
+                      src={bookingActivity.image}
+                      alt={bookingActivity.name}
+                      className="cart-booking-activity-img"
+                    />
+                  )}
+                  <div className="cart-booking-activity-info">
+                    <p className="cart-booking-activity-name">
+                      {bookingActivity.name}
+                    </p>
+                    {bookingActivity.category && (
+                      <p className="cart-booking-activity-meta">
+                        {bookingActivity.category}
+                        {bookingActivity.level ? ` · ${bookingActivity.level}` : ""}
+                        {bookingActivity.duration ? ` · ${bookingActivity.duration}` : ""}
+                      </p>
+                    )}
+                    <p className="cart-booking-activity-price">
+                      ${activityPrice} / person
                     </p>
                   </div>
-                )}
-                <div>
-                  <p className="cart-booking-field-label">Activity Price</p>
-                  <p className="cart-booking-field-value" style={{ color: "var(--accent-deep)" }}>
-                    ${activityPrice}
-                  </p>
                 </div>
+
+                {/* Time slot pill */}
+                {bookingSlot && (
+                  <div className="cart-booking-slot-pill">
+                    <span className="cart-booking-slot-icon">🕐</span>
+                    <div>
+                      <p className="cart-booking-slot-label">Time Slot</p>
+                      <p className="cart-booking-slot-value">
+                        {new Date(bookingSlot.start).toLocaleDateString([], {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {" · "}
+                        {new Date(bookingSlot.start).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {" — "}
+                        {new Date(bookingSlot.end).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -124,7 +185,10 @@ export default function Cart() {
             <div className="cart-empty">
               <div className="cart-empty-icon">🍽️</div>
               <p className="cart-empty-text">Your cart is empty</p>
-              <button className="cart-browse-btn" onClick={() => navigate("/menu")}>
+              <button
+                className="cart-browse-btn"
+                onClick={() => navigate("/menu")}
+              >
                 Browse Menu
               </button>
             </div>
@@ -146,7 +210,9 @@ export default function Cart() {
                     No food added yet.{" "}
                     <span
                       style={{ color: "var(--accent-deep)", cursor: "pointer", fontWeight: 600 }}
-                      onClick={() => navigate("/menu", { state: { bookingActivity, bookingSlot } })}
+                      onClick={() =>
+                        navigate("/menu", { state: { bookingActivity, bookingSlot } })
+                      }
                     >
                       Browse menu →
                     </span>
@@ -154,7 +220,11 @@ export default function Cart() {
                 ) : (
                   orders.map((item) => (
                     <div key={item.order_id} className="cart-item">
-                      <img src={item.image_url} alt={item.name} className="cart-item-img" />
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="cart-item-img"
+                      />
                       <div>
                         <h3 className="cart-item-name">{item.name}</h3>
                         {item.comment && (
@@ -164,12 +234,31 @@ export default function Cart() {
                       </div>
                       <div className="cart-item-controls">
                         <div className="cart-qty-wrap">
-                          <button className="cart-qty-btn" onClick={() => handleUpdateQuantity(item.order_id, item.quantity - 1)}>−</button>
+                          <button
+                            className="cart-qty-btn"
+                            onClick={() =>
+                              handleUpdateQuantity(item.order_id, item.quantity - 1)
+                            }
+                          >
+                            −
+                          </button>
                           <span className="cart-qty-val">{item.quantity}</span>
-                          <button className="cart-qty-btn" onClick={() => handleUpdateQuantity(item.order_id, item.quantity + 1)}>+</button>
+                          <button
+                            className="cart-qty-btn"
+                            onClick={() =>
+                              handleUpdateQuantity(item.order_id, item.quantity + 1)
+                            }
+                          >
+                            +
+                          </button>
                         </div>
-                        <span className="cart-item-subtotal">${(item.price * item.quantity).toFixed(2)}</span>
-                        <button className="cart-remove-btn" onClick={() => handleDelete(item.order_id)}>
+                        <span className="cart-item-subtotal">
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </span>
+                        <button
+                          className="cart-remove-btn"
+                          onClick={() => handleDelete(item.order_id)}
+                        >
                           Remove
                         </button>
                       </div>
@@ -184,15 +273,23 @@ export default function Cart() {
 
                 {bookingActivity && (
                   <div className="cart-summary-row">
-                    <span className="cart-summary-row-name">🎨 {bookingActivity.name}</span>
-                    <span className="cart-summary-row-price">${activityPrice.toFixed(2)}</span>
+                    <span className="cart-summary-row-name">
+                      🎨 {bookingActivity.name}
+                    </span>
+                    <span className="cart-summary-row-price">
+                      ${activityPrice.toFixed(2)}
+                    </span>
                   </div>
                 )}
 
                 {orders.map((item) => (
                   <div key={item.order_id} className="cart-summary-row">
-                    <span className="cart-summary-row-name">{item.name} ×{item.quantity}</span>
-                    <span className="cart-summary-row-price">${(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="cart-summary-row-name">
+                      {item.name} ×{item.quantity}
+                    </span>
+                    <span className="cart-summary-row-price">
+                      ${(item.price * item.quantity).toFixed(2)}
+                    </span>
                   </div>
                 ))}
 
@@ -200,7 +297,9 @@ export default function Cart() {
 
                 <div className="cart-summary-total-row">
                   <span className="cart-summary-total-label">Total</span>
-                  <span className="cart-summary-total-price">${totalPrice.toFixed(2)}</span>
+                  <span className="cart-summary-total-price">
+                    ${totalPrice.toFixed(2)}
+                  </span>
                 </div>
 
                 <button className="cart-place-btn" onClick={handleProceedToPayment}>
@@ -210,7 +309,9 @@ export default function Cart() {
                 <button
                   className="cart-back-btn"
                   style={{ width: "100%", justifyContent: "center", marginTop: "8px" }}
-                  onClick={() => navigate("/menu", { state: { bookingActivity, bookingSlot } })}
+                  onClick={() =>
+                    navigate("/menu", { state: { bookingActivity, bookingSlot } })
+                  }
                 >
                   + Add More Food
                 </button>
@@ -276,6 +377,33 @@ const styles = `
     line-height: 1.05;
   }
 
+  .cart-hero-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .cart-home-btn {
+    padding: 12px 20px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }
+
+  .cart-home-btn:hover {
+    background: var(--text);
+    color: #fff;
+    border-color: var(--text);
+  }
+
   .cart-back-btn {
     padding: 12px 20px;
     border-radius: 999px;
@@ -300,48 +428,157 @@ const styles = `
     border-color: var(--text);
   }
 
+  /* Booking Card */
   .cart-booking-card {
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 22px 26px;
-    margin-bottom: 24px;
-    box-shadow: 0 4px 12px rgba(36,28,23,0.05);
+    border-radius: 24px;
+    margin-bottom: 28px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .cart-booking-card-header {
+    background: linear-gradient(135deg, #f7f1e8 0%, #fdfaf6 100%);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 28px;
+  }
+
+  .cart-booking-card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
   }
 
   .cart-booking-label {
-    font-size: 0.74rem;
-    letter-spacing: 0.13em;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--accent-deep);
     font-weight: 700;
-    display: block;
-    margin-bottom: 14px;
   }
 
-  .cart-booking-row {
+  .cart-booking-actions {
     display: flex;
-    gap: 32px;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
-  .cart-booking-field-label {
-    font-size: 0.76rem;
-    color: var(--muted);
-    margin: 0 0 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+  .cart-booking-edit-btn {
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
     font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    transition: all 0.2s ease;
   }
 
-  .cart-booking-field-value {
+  .cart-booking-edit-btn:hover {
+    background: var(--surface-2);
+    border-color: var(--accent);
+  }
+
+  .cart-booking-edit-btn--primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .cart-booking-edit-btn--primary:hover {
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
+    color: #fff;
+  }
+
+  .cart-booking-body {
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .cart-booking-activity-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .cart-booking-activity-img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+
+  .cart-booking-activity-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cart-booking-activity-name {
     font-family: 'Playfair Display', serif;
-    font-size: 1.05rem;
+    font-size: 1.2rem;
+    font-weight: 700;
     color: var(--text);
-    font-weight: 600;
     margin: 0;
   }
 
+  .cart-booking-activity-meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .cart-booking-activity-price {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--accent-deep);
+    margin: 0;
+  }
+
+  .cart-booking-slot-pill {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px 20px;
+  }
+
+  .cart-booking-slot-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+  }
+
+  .cart-booking-slot-label {
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+
+  .cart-booking-slot-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Empty state */
   .cart-empty {
     text-align: center;
     padding: 80px 20px;
@@ -381,6 +618,7 @@ const styles = `
     transform: translateY(-1px);
   }
 
+  /* Main grid */
   .cart-grid {
     display: grid;
     grid-template-columns: 1fr 380px;
@@ -464,7 +702,7 @@ const styles = `
   }
 
   .cart-qty-btn:first-child { border-radius: 8px 0 0 8px; }
-  .cart-qty-btn:last-child { border-radius: 0 8px 8px 0; }
+  .cart-qty-btn:last-child  { border-radius: 0 8px 8px 0; }
 
   .cart-qty-btn:hover {
     background: var(--text);
@@ -602,5 +840,8 @@ const styles = `
     .cart-grid { grid-template-columns: 1fr; }
     .cart-item { grid-template-columns: 80px 1fr; }
     .cart-item-controls { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
+    .cart-booking-card-title-row { flex-direction: column; align-items: flex-start; }
+    .cart-booking-activity-img { width: 56px; height: 56px; }
+    .cart-hero-actions { width: 100%; }
   }
 `;
