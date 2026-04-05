@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Layout from "../../components/Layout";
 import PaymentForm from "../../components/PaymentForm";
@@ -216,6 +217,10 @@ export default function PaymentPage() {
   // Convert totalPrice (dollars) to cents for Stripe
   const amountInCents = Math.round(totalPrice * 100);
 
+  // Track voucher applied from PaymentForm to update booking summary total
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const displayTotal = appliedVoucher ? (appliedVoucher.finalAmount / 100) : totalPrice;
+
   // Format food items for composite service
   const foodItems = orders.map((o) => ({
     id: o.menu_item_id,
@@ -315,7 +320,14 @@ export default function PaymentPage() {
               {/* Total */}
               <div className="pay-total-row">
                 <span className="pay-total-label">Total</span>
-                <span className="pay-total-value">${totalPrice.toFixed(2)} SGD</span>
+                <div style={{ textAlign: "right" }}>
+                  <span className="pay-total-value">${displayTotal.toFixed(2)} SGD</span>
+                  {appliedVoucher && (
+                    <div style={{ fontSize: "0.8rem", color: "#2d6e2d", marginTop: "4px" }}>
+                      Saved ${(appliedVoucher.saving / 100).toFixed(2)} with {appliedVoucher.code}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="pay-secure-badge">
@@ -330,6 +342,7 @@ export default function PaymentPage() {
               bookingActivity={bookingActivity}
               bookingSlot={bookingSlot}
               foodItems={foodItems}
+              onVoucherApplied={setAppliedVoucher}
               onSuccess={handleSuccess}
             />
           </div>
