@@ -397,6 +397,17 @@ export default function Cart() {
     setOrders(prev => prev.map(o => o.order_id === order_id ? { ...o, quantity } : o));
   };
 
+  const handlePlaceOrder = () => {
+  const bookingContext = JSON.parse(sessionStorage.getItem("bookingContext") || "{}");
+  navigate("/payment", {
+    state: {
+      orders,
+      totalPrice,
+      bookingContext,
+    }
+  });
+};
+
   if (loading) return (
     <>
       <style>{styles}</style>
@@ -484,9 +495,9 @@ export default function Cart() {
                   <span className="cart-summary-total-price">${totalPrice.toFixed(2)}</span>
                 </div>
 
-                <button className="cart-place-btn" onClick={() => navigate("/menu")}>
-                  Place Order
-                </button>
+              <button className="cart-place-btn" onClick={handlePlaceOrder}>
+                Proceed to Payment
+              </button>
               </div>
             </div>
           )}
