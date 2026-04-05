@@ -5,9 +5,6 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import Layout from "../../components/Layout";
 import apiClient from "../../services/apiClient";
-import { getFirstBookableDate, isFutureDaySlotSelection } from "../../utils/bookingCalendar";
-
-const TWO_HOUR_MS = 2 * 60 * 60 * 1000;
 
 export default function BookingPage() {
   const location = useLocation();
@@ -16,12 +13,40 @@ export default function BookingPage() {
   const passedActivity = location.state?.activity || null;
 
   const [activities, setActivities] = useState([]);
-  const [selectedActivity, setSelectedActivity] = useState(passedActivity);
+
+  const [selectedActivity, setSelectedActivity] = useState(
+    passedActivity ||
+      JSON.parse(sessionStorage.getItem("bookingActivity") || "null")
+  );
+
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [slotAvailability, setSlotAvailability] = useState(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const firstBookableDate = getFirstBookableDate();
+
+  const saveActivity = (activity) => {
+    setSelectedActivity(activity);
+    if (activity) {
+      sessionStorage.setItem("bookingActivity", JSON.stringify(activity));
+    } else {
+      sessionStorage.removeItem("bookingActivity");
+    }
+  };
+
+  const saveSlot = (info) => {
+    setSelectedSlot(info);
+    if (info) {
+      sessionStorage.setItem(
+        "bookingSlot",
+        JSON.stringify({
+          start: info.start.toISOString(),
+          end: info.end.toISOString(),
+        })
+      );
+    } else {
+      sessionStorage.removeItem("bookingSlot");
+    }
+  };
 
   useEffect(() => {
     const fetchActivities = async () => {
@@ -30,8 +55,8 @@ export default function BookingPage() {
         const activityList = res.data.activities || [];
         setActivities(activityList);
         if (passedActivity?.id) {
-          const matched = activityList.find(item => item.id === passedActivity.id);
-          if (matched) setSelectedActivity(matched);
+          const matched = activityList.find((item) => item.id === passedActivity.id);
+          if (matched) saveActivity(matched);
         }
       } catch (error) {
         console.error("Failed to load activities:", error);
@@ -42,14 +67,7 @@ export default function BookingPage() {
   }, []);
 
   const handleSlotSelect = async (info) => {
-    if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
-      setSelectedSlot(null);
-      setSlotAvailability(null);
-      setStatusMessage("Please choose a slot from tomorrow onward.");
-      return;
-    }
-
-    setSelectedSlot(info);
+    saveSlot(info);
     setSlotAvailability(null);
 
     if (!selectedActivity?.id) {
@@ -78,10 +96,12 @@ export default function BookingPage() {
 
   const bookingState = {
     bookingActivity: selectedActivity,
-    bookingSlot: selectedSlot ? {
-      start: selectedSlot.start.toISOString(),
-      end: selectedSlot.end.toISOString(),
-    } : null,
+    bookingSlot: selectedSlot
+      ? {
+          start: selectedSlot.start.toISOString(),
+          end: selectedSlot.end.toISOString(),
+        }
+      : null,
   };
 
   const isDisabled = !selectedSlot || !selectedActivity || slotAvailability?.is_full;
@@ -98,7 +118,10 @@ export default function BookingPage() {
               ← Back to Activities
             </button>
             {selectedActivity?.id && (
-              <button className="bp-back-btn" onClick={() => navigate(`/activity/${selectedActivity.id}`)}>
+              <button
+                className="bp-back-btn"
+                onClick={() => navigate(`/activity/${selectedActivity.id}`)}
+              >
                 View Activity Details
               </button>
             )}
@@ -121,20 +144,32 @@ export default function BookingPage() {
             <h2 className="bp-card-title">🎨 Selected Activity</h2>
             {selectedActivity ? (
               <div className="bp-activity-display">
-                <img src={selectedActivity.image} alt={selectedActivity.name} className="bp-activity-img" />
+                <img
+                  src={selectedActivity.image}
+                  alt={selectedActivity.name}
+                  className="bp-activity-img"
+                />
                 <div className="bp-activity-info">
                   <h3>{selectedActivity.name}</h3>
                   <p>{selectedActivity.category}</p>
                   <p>{selectedActivity.duration} • {selectedActivity.level}</p>
-                  <p style={{ color: "var(--accent-deep)", fontWeight: 600 }}>${selectedActivity.price} / person</p>
+                  <p style={{ color: "var(--accent-deep)", fontWeight: 600 }}>
+                    ${selectedActivity.price} / person
+                  </p>
                 </div>
               </div>
             ) : (
               <>
-                <p style={{ color: "var(--muted)", marginBottom: "16px" }}>No activity selected. Pick one:</p>
+                <p style={{ color: "var(--muted)", marginBottom: "16px" }}>
+                  No activity selected. Pick one:
+                </p>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                  {activities.map(activity => (
-                    <button key={activity.id} className="bp-activity-pick-btn" onClick={() => setSelectedActivity(activity)}>
+                  {activities.map((activity) => (
+                    <button
+                      key={activity.id}
+                      className="bp-activity-pick-btn"
+                      onClick={() => saveActivity(activity)}
+                    >
                       {activity.name}
                     </button>
                   ))}
@@ -160,14 +195,20 @@ export default function BookingPage() {
                 editable={false}
                 select={handleSlotSelect}
                 selectAllow={(info) => info.end - info.start === 2 * 60 * 60 * 1000}
-                events={selectedSlot ? [{
-                  title: `${selectedActivity?.name || "Selected"} ✓`,
-                  start: selectedSlot.start,
-                  end: selectedSlot.end,
-                  backgroundColor: "#c8a97e",
-                  borderColor: "#b38d5e",
-                  textColor: "#fff",
-                }] : []}
+                events={
+                  selectedSlot
+                    ? [
+                        {
+                          title: `${selectedActivity?.name || "Selected"} ✓`,
+                          start: selectedSlot.start,
+                          end: selectedSlot.end,
+                          backgroundColor: "#c8a97e",
+                          borderColor: "#b38d5e",
+                          textColor: "#fff",
+                        },
+                      ]
+                    : []
+                }
                 height="auto"
               />
             </div>
@@ -180,7 +221,9 @@ export default function BookingPage() {
                   ? `${selectedSlot.start.toLocaleString()} — ${selectedSlot.end.toLocaleString()}`
                   : "Click on a time block to select a 2-hour slot"}
               </p>
-              {loadingAvailability && <p style={{ color: "var(--muted)" }}>Checking availability…</p>}
+              {loadingAvailability && (
+                <p style={{ color: "var(--muted)" }}>Checking availability…</p>
+              )}
               {!loadingAvailability && slotAvailability && (
                 <p className={slotAvailability.is_full ? "bp-slot-full" : "bp-slot-open"}>
                   {slotAvailability.is_full
@@ -190,7 +233,6 @@ export default function BookingPage() {
               )}
             </div>
 
-            
             <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
               <button
                 className="bp-btn bp-btn-primary"
@@ -213,8 +255,6 @@ export default function BookingPage() {
     </>
   );
 }
-
-
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
