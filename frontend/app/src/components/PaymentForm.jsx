@@ -373,7 +373,7 @@ export default function PaymentForm({
   useEffect(() => {
     if (secondsLeft === 0 && paymentIntentId && !success) {
       setExpired(true);
-      cancelPaymentIntent(paymentIntentId).catch(() => {});
+      cancelPaymentIntent(paymentIntentId).catch(() => { });
     }
   }, [secondsLeft, paymentIntentId, success]);
 
@@ -381,6 +381,33 @@ export default function PaymentForm({
     const m = Math.floor(s / 60);
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  const formatSingaporeRange = (start, end) => {
+    if (!start || !end) return "";
+
+    const dateOptions = {
+      timeZone: "Asia/Singapore",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    };
+
+    const timeOptions = {
+      timeZone: "Asia/Singapore",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    };
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const datePart = startDate.toLocaleDateString("en-SG", dateOptions);
+    const startTime = startDate.toLocaleTimeString("en-SG", timeOptions);
+    const endTime = endDate.toLocaleTimeString("en-SG", timeOptions);
+
+    return `${datePart}, ${startTime} to ${endTime}`;
   };
 
   const timerPct = (secondsLeft / TIMER_SECONDS) * 100;
@@ -424,8 +451,8 @@ export default function PaymentForm({
         user_name: user?.username || "guest",
         user_email: trimmedEmail,
         activity_id: bookingActivity?.id,
-        start_time: bookingSlot?.start,
-        end_time: bookingSlot?.end,
+        start_time: bookingSlot?.start?.toISOString?.() || bookingSlot?.start,
+        end_time: bookingSlot?.end?.toISOString?.() || bookingSlot?.end,
         food_items: foodItems,
         payment_method: "card",
         voucher_code: voucher?.code || "",
@@ -547,6 +574,18 @@ export default function PaymentForm({
           <div className="pf-session-ref">
             <span>🔖</span>
             <span>Session ref: <strong style={{ color: "#7d6f5e" }}>{paymentIntentId}</strong></span>
+          </div>
+        )}
+
+        {bookingSlot?.start && bookingSlot?.end && (
+          <div className="pf-session-ref">
+            <span>🗓️</span>
+            <span>
+              Booking time:{" "}
+              <strong style={{ color: "#7d6f5e" }}>
+                {formatSingaporeRange(bookingSlot.start, bookingSlot.end)}
+              </strong>
+            </span>
           </div>
         )}
 

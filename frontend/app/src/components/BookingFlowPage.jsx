@@ -193,6 +193,33 @@ export default function BookingPage() {
     })
     .filter(Boolean);
 
+  const formatSingaporeRange = (start, end) => {
+    if (!start || !end) return "Not selected";
+
+    const dateOptions = {
+      timeZone: "Asia/Singapore",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    };
+
+    const timeOptions = {
+      timeZone: "Asia/Singapore",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    };
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const datePart = startDate.toLocaleDateString("en-SG", dateOptions);
+    const startTime = startDate.toLocaleTimeString("en-SG", timeOptions);
+    const endTime = endDate.toLocaleTimeString("en-SG", timeOptions);
+
+    return `${datePart}, ${startTime} - ${endTime}`;
+  };
+
   return (
     <div className="booking-page">
       <h1 className="detail-title">Book Your Activity</h1>
@@ -222,6 +249,7 @@ export default function BookingPage() {
         <FullCalendar
           plugins={[timeGridPlugin, interactionPlugin]}
           initialView="timeGridWeek"
+          timeZone="Asia/Singapore"
           allDaySlot={false}
           slotMinTime="08:00:00"
           slotMaxTime="20:00:00"
@@ -236,13 +264,13 @@ export default function BookingPage() {
           events={
             selectedSlot
               ? [{
-                  title: "Selected",
-                  start: selectedSlot.start,
-                  end: selectedSlot.end,
-                  backgroundColor: "var(--accent)",
-                  borderColor: "var(--accent-deep)",
-                  textColor: "var(--surface)"
-                }]
+                title: "Selected",
+                start: selectedSlot.start,
+                end: selectedSlot.end,
+                backgroundColor: "var(--accent)",
+                borderColor: "var(--accent-deep)",
+                textColor: "var(--surface)"
+              }]
               : []
           }
           height="auto"
@@ -251,7 +279,7 @@ export default function BookingPage() {
           <p>
             <strong>Selected slot:</strong>{" "}
             {selectedSlot
-              ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}`
+              ? formatSingaporeRange(selectedSlot.start, selectedSlot.end)
               : "Choose a 1 hour slot to see availability."}
           </p>
           {loadingSlotAvailability && <p>Loading slot availability...</p>}
@@ -314,7 +342,7 @@ export default function BookingPage() {
             placeholder="Enter email for confirmation"
           />
           <p><strong>Activity:</strong> {selectedActivity?.name || "Not selected"}</p>
-          <p><strong>Slot:</strong> {selectedSlot ? `${selectedSlot.start.toLocaleString()} - ${selectedSlot.end.toLocaleString()}` : "Not selected"}</p>
+          <p><strong>Slot:</strong> {selectedSlot ? formatSingaporeRange(selectedSlot.start, selectedSlot.end) : "Not selected"}</p>
           <p><strong>Slots Left:</strong> {slotAvailability ? slotAvailability.remaining_slots : "Select a slot"}</p>
           <p><strong>Food:</strong> {selectedFoodEntries.length > 0 ? selectedFoodEntries.map((item) => `${item.name} x${item.quantity}`).join(", ") : "Not selected"}</p>
           <p><strong>Total:</strong> ${total.toFixed(2)}</p>
