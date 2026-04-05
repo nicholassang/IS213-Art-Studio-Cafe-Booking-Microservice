@@ -195,6 +195,35 @@ const styles = `
     margin-top: 20px;
   }
 
+  .pay-post-confirmation {
+    margin-top: 28px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .pay-home-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 999px;
+    background: var(--text);
+    color: #fffaf4;
+    font-size: 0.92rem;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.2s;
+    box-shadow: var(--shadow);
+  }
+
+  .pay-home-btn:hover {
+    background: var(--accent-deep);
+    transform: translateY(-1px);
+  }
+
   @media (max-width: 860px) {
     .pay-grid { grid-template-columns: 1fr; }
     .pay-title { font-size: 2rem; }
@@ -219,6 +248,7 @@ export default function PaymentPage() {
 
   // Track voucher applied from PaymentForm to update booking summary total
   const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const displayTotal = appliedVoucher ? (appliedVoucher.finalAmount / 100) : totalPrice;
 
   const formatBookingRange = (start, end) => {
@@ -254,6 +284,7 @@ export default function PaymentPage() {
     // Clear session storage after successful payment
     sessionStorage.removeItem("bookingActivity");
     sessionStorage.removeItem("bookingSlot");
+    setBookingConfirmed(Boolean(result?.success));
   };
 
   return (
@@ -368,6 +399,14 @@ export default function PaymentPage() {
               onSuccess={handleSuccess}
             />
           </div>
+
+          {bookingConfirmed && (
+            <div className="pay-post-confirmation">
+              <button className="pay-home-btn" onClick={() => navigate("/")}>
+                Return to Home
+              </button>
+            </div>
+          )}
         </div>
       </Layout>
     </>
