@@ -23,10 +23,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 storage_backend = None
 supabase_client = None
 
-if DATABASE_URL:
-    storage_backend = "postgres"
-    logger.info("Quiz service configured to use Postgres session storage")
-elif SUPABASE_URL and SUPABASE_KEY:
+if SUPABASE_URL and SUPABASE_KEY:
     try:
         create_client = import_module("supabase").create_client
         supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -34,6 +31,9 @@ elif SUPABASE_URL and SUPABASE_KEY:
         logger.info("Quiz service configured to use Supabase session storage")
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
+elif DATABASE_URL:
+    storage_backend = "postgres"
+    logger.info("Quiz service configured to use Postgres session storage")
 else:
     logger.warning("Quiz session storage not configured — set DATABASE_URL or Supabase credentials")
 

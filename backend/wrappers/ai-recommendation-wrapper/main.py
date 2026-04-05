@@ -2,7 +2,6 @@ import json
 import logging
 import re
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from groq import AsyncGroq
 from google import genai
@@ -10,7 +9,6 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

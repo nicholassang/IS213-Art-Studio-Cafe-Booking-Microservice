@@ -122,8 +122,6 @@ services:
         condition: service_healthy
       ai-recommender-composite-service:
         condition: service_started
-      ai-recommender-service:
-        condition: service_started
 
   user-service:
     build: ./services/user-service
@@ -167,18 +165,17 @@ services:
     depends_on:
       - quiz-service
       - ai-recommender-service
+    ports:
+      - "8009:8000"
 
   ai-recommender-service:
     build: ./services/ai-recommender-service
     container_name: ai-recommender-service
     env_file:
-      - ./wrappers/ai-recommendation-wrapper/.env
+      - ./services/ai-recommender-service/.env
     environment:
       - AI_WRAPPER_URL=http://ai-recommendation-wrapper:8000
-      - DATABASE_URL=postgresql://quiz_user:quiz_pass@quiz-db:5432/quiz_db
     depends_on:
-      quiz-db:
-        condition: service_healthy
       ai-recommendation-wrapper:
         condition: service_started
     ports:
@@ -189,6 +186,8 @@ services:
     container_name: ai-recommendation-wrapper
     env_file:
       - ./wrappers/ai-recommendation-wrapper/.env
+    ports:
+      - "8006:8000"
 
   payment-wrapper:
     build: ./wrappers/payment-wrapper
@@ -240,12 +239,9 @@ services:
     env_file:
       - ./services/quiz-service/.env
     environment:
-      - DATABASE_URL=postgresql://quiz_user:quiz_pass@quiz-db:5432/quiz_db
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - QUIZ_EXCHANGE=quiz_events
     depends_on:
-      quiz-db:
-        condition: service_healthy
       rabbitmq:
         condition: service_started
     healthcheck:

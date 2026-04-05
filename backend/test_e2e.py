@@ -195,19 +195,18 @@ async def test_health(client: httpx.AsyncClient) -> bool:
                 fail("AI atomic missing from health response")
                 all_healthy = False
 
-            # The "quiz" entry in composite health is self-referential
-            # (quiz-service IS the composite, not a separate atomic).
-            # We verify the quiz atomic separately below.
+            # The "quiz" entry in composite health pings the quiz-service container.
+            # We also verify the quiz-service directly below via its own /health endpoint.
     except httpx.ConnectError:
         fail("Could not connect to composite", f"Is the composite running at {COMPOSITE_DIRECT_URL}?")
         return False
 
-    # --- Check quiz atomic directly (it is the quiz-service container itself) ---
+    # --- Check quiz atomic directly (separate quiz-service container) ---
     try:
         res = await client.get(f"http://localhost:8012/health", timeout=10.0)
         print(f"  Quiz-service direct status: {res.status_code}")
         if res.status_code == 200:
-            ok("Quiz-service container is reachable (serves as quiz composite)")
+            ok("Quiz-service container is reachable")
         else:
             fail("Quiz-service returned non-200", res.text[:200])
             all_healthy = False
@@ -316,7 +315,7 @@ async def test_fetch_questions(client: httpx.AsyncClient) -> bool:
 async def test_fetch_questions_by_category(client: httpx.AsyncClient) -> bool:
     """Test fetching quiz questions filtered by category."""
     section("5 · Fetch Quiz Questions by Category")
-    res = await client.get(f"{BASE_URL}/quiz/questions", params={"category": "social"})
+    res = await client.get(f"{BASE_URL}/quiz/questions", params={"category": "food_and_drink"})
     print(f"  Status: {res.status_code}")
 
     if res.status_code != 200:
@@ -329,12 +328,12 @@ async def test_fetch_questions_by_category(client: httpx.AsyncClient) -> bool:
         return False
 
     count = len(data)
-    ok(f"Received {count} question(s) for category 'social'")
+    ok(f"Received {count} question(s) for category 'food_and_drink'")
 
     # Validate all questions match the category
     for q in data:
-        if q.get("category") != "social":
-            fail(f"Question {q.get('id')} has wrong category", f"expected 'social', got '{q.get('category')}'")
+        if q.get("category") != "food_and_drink":
+            fail(f"Question {q.get('id')} has wrong category", f"expected 'food_and_drink', got '{q.get('category')}'")
             return False
 
     ok("All questions match the requested category")
