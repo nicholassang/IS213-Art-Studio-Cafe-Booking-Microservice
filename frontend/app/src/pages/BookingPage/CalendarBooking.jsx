@@ -41,6 +41,23 @@ export default function BookingPage() {
     fetchActivities();
   }, [passedActivity]);
 
+  const getSlotAvailability = async (startTime, endTime, activityId) => {
+    try {
+      const res = await apiClient.get("/bookings/availability", {
+        params: {
+          start_time: startTime,
+          end_time: endTime,
+          activity_id: activityId,
+        },
+      });
+
+      return res.data;
+    } catch (error) {
+      console.error("Failed to get slot availability:", error);
+      throw error;
+    }
+  };
+
   const handleSlotSelect = async (info) => {
     if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
       setSelectedSlot(null);
