@@ -263,6 +263,38 @@ def list_bookings(user_name: Optional[str] = None):
 
     return {"success": True, "bookings": bookings}
 
+
+@app.patch("/bookings/{booking_id}/cancel")
+def cancel_booking(booking_id: int, user_name: str):
+    booking = fetch_one(
+        f"SELECT {BOOKING_COLUMNS} FROM bookings WHERE id = %s LIMIT 1",
+        (booking_id,),
+    )
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.get("user_name") != user_name:
+        raise HTTPException(status_code=403, detail="You can only cancel your own bookings")
+
+    if booking.get("status") == "cancelled":
+        return {
+            "success": True,
+            "message": "Booking already cancelled",
+            "booking": booking,
+        }
+
+    updated_booking = execute_write(
+        f"UPDATE bookings SET status = %s WHERE id = %s RETURNING {BOOKING_COLUMNS}",
+        ("cancelled", booking_id),
+    )
+
+    return {
+        "success": True,
+        "message": "Booking cancelled successfully",
+        "booking": updated_booking,
+    }
+
 # Save an activity
 @app.post("/saved-activities")
 def save_activity(payload: SaveActivityRequest):

@@ -253,6 +253,59 @@ const styles = `
     line-height: 1.6;
   }
 
+  .home-booking-email {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .home-bookings-feedback {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: #fff8f1;
+    color: var(--text);
+  }
+
+  .home-bookings-feedback.is-error {
+    border-color: #e5b8b2;
+    background: #fff4f2;
+    color: #8a2f24;
+  }
+
+  .home-booking-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: auto;
+  }
+
+  .home-booking-action {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+
+  .home-booking-action:hover:not(:disabled) {
+    background: #f6eee2;
+    transform: translateY(-1px);
+  }
+
+  .home-booking-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+
+  .home-booking-action.is-danger {
+    border-color: #e5b8b2;
+    color: #8a2f24;
+    background: #fff6f4;
+  }
+
   .home-bookings-empty {
     margin: 0;
     padding: 18px;
@@ -282,11 +335,14 @@ export default function HomePage() {
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState("");
+  const [bookingActionMessage, setBookingActionMessage] = useState("");
+  const [cancelingBookingId, setCancelingBookingId] = useState(null);
 
   useEffect(() => {
     if (!user?.username) {
       setBookings([]);
       setBookingsError("");
+      setBookingActionMessage("");
       setBookingsLoading(false);
       return;
     }
@@ -323,6 +379,38 @@ export default function HomePage() {
       ignore = true;
     };
   }, [user?.username]);
+
+  const handleCancelBooking = async (bookingId) => {
+    if (!user?.username || cancelingBookingId === bookingId) {
+      return;
+    }
+
+    setCancelingBookingId(bookingId);
+    setBookingsError("");
+    setBookingActionMessage("");
+
+    try {
+      const response = await apiClient.patch(`/bookings/${bookingId}/cancel`, null, {
+        params: { user_name: user.username },
+      });
+
+      const updatedBooking = response.data.booking;
+
+      setBookings((currentBookings) =>
+        currentBookings.map((booking) =>
+          booking.id === bookingId
+            ? { ...booking, ...(updatedBooking || {}), status: updatedBooking?.status || "cancelled" }
+            : booking
+        )
+      );
+      setBookingActionMessage(response.data.message || "Booking cancelled successfully.");
+    } catch (error) {
+      const message = error.response?.data?.detail || error.response?.data?.message || "Unable to cancel this booking right now.";
+      setBookingsError(message);
+    } finally {
+      setCancelingBookingId(null);
+    }
+  };
 
   const formatBookingDateTime = (value) => {
     if (!value) {
@@ -430,8 +518,11 @@ export default function HomePage() {
                   <p className="home-bookings-subtitle">Remember to mark your calendars!</p>
                 </div>
 
+                {bookingActionMessage && !bookingsError && (
+                  <p className="home-bookings-feedback">{bookingActionMessage}</p>
+                )}
                 {bookingsLoading && <p className="home-bookings-empty">Loading your bookings...</p>}
-                {!bookingsLoading && bookingsError && <p className="home-bookings-empty">{bookingsError}</p>}
+                {!bookingsLoading && bookingsError && <p className="home-bookings-feedback is-error">{bookingsError}</p>}
                 {!bookingsLoading && !bookingsError && bookings.length === 0 && (
                   <p className="home-bookings-empty">You have no bookings yet. Reserve your first session below.</p>
                 )}
@@ -454,9 +545,23 @@ export default function HomePage() {
                         <p className="home-booking-detail">
                           <strong>Total:</strong> {formatBookingAmount(booking.total_amount)}
                         </p>
-                        <p className="home-booking-detail">
+                        <p className="home-booking-detail home-booking-email">
                           <strong>Email:</strong> {booking.user_email || "Not provided"}
                         </p>
+                        <div className="home-booking-actions">
+                          <button
+                            type="button"
+                            className="home-booking-action is-danger"
+                            onClick={() => handleCancelBooking(booking.id)}
+                            disabled={booking.status === "cancelled" || cancelingBookingId === booking.id}
+                          >
+                            {booking.status === "cancelled"
+                              ? "Cancelled"
+                              : cancelingBookingId === booking.id
+                                ? "Cancelling..."
+                                : "Cancel booking"}
+                          </button>
+                        </div>
                       </article>
                     ))}
                   </div>
