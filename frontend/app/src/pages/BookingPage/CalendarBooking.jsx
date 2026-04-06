@@ -16,7 +16,9 @@ export default function BookingPage() {
   const passedActivity = location.state?.activity || null;
 
   const [activities, setActivities] = useState([]);
-  const [selectedActivity, setSelectedActivity] = useState(passedActivity);
+  const [selectedActivity, setSelectedActivity] = useState(
+    passedActivity || JSON.parse(sessionStorage.getItem("bookingActivity") || "null")
+  );
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [slotAvailability, setSlotAvailability] = useState(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
@@ -87,11 +89,11 @@ export default function BookingPage() {
     if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
       setSelectedSlot(null);
       setSlotAvailability(null);
-      setStatusMessage("Please choose a slot from tomorrow onward.");
+      setStatusMessage("Please choose a slot from today onward.");
       return;
     }
 
-    setSelectedSlot(info);
+    saveSlot(info);
     setSlotAvailability(null);
 
     if (!selectedActivity?.id) {
@@ -117,6 +119,16 @@ export default function BookingPage() {
     }
   };
 
+  const bookingState = {
+    bookingActivity: selectedActivity,
+    bookingSlot: selectedSlot
+      ? {
+          start: selectedSlot.start.toISOString(),
+          end: selectedSlot.end.toISOString(),
+        }
+      : null,
+  };
+
   const handleAddFood = async () => {
     try {
       const res = await apiClient.get("/food-order/all");
@@ -131,16 +143,6 @@ export default function BookingPage() {
     }
 
     navigate("/menu", { state: bookingState });
-  };
-
-  const bookingState = {
-    bookingActivity: selectedActivity,
-    bookingSlot: selectedSlot
-      ? {
-          start: selectedSlot.start.toISOString(),
-          end: selectedSlot.end.toISOString(),
-        }
-      : null,
   };
 
   const isDisabled = !selectedSlot || !selectedActivity || slotAvailability?.is_full;
@@ -170,6 +172,7 @@ export default function BookingPage() {
             <p className="bp-subtitle">
               Choose a 2-hour time slot and review everything at a glance.
             </p>
+          </section>
 
           {statusMessage && <div className="bp-status">{statusMessage}</div>}
 
@@ -216,8 +219,6 @@ export default function BookingPage() {
                   </>
                 )}
               </div>
-            )}
-          </div>
 
               <div className="bp-card">
                 <p className="bp-step-label">Step 3</p>
@@ -267,17 +268,15 @@ export default function BookingPage() {
                   </button>
                 </div>
               </div>
-            ) : (
-              <>
-                <p style={{ color: "#7d7468" }}>No activity selected yet.</p>
+            </div>
 
             <div className="bp-card">
               <p className="bp-step-label">Step 2</p>
               <h2 className="bp-card-title">🕐 Select Time Slot</h2>
-              <p className="bp-sub-hint">Choose a 2-hour slot from now onward.</p>
+              <p className="bp-sub-hint">Choose a 2-hour slot from today onward.</p>
 
               <div className="bp-chip-row">
-                {["2-hour sessions", "From now onward", "8AM–8PM", "Limited slots"].map(
+                {["2-hour sessions", "From today onward", "8AM–8PM", "Limited slots"].map(
                   (item) => (
                     <span key={item} className="bp-chip">
                       {item}
@@ -326,97 +325,94 @@ export default function BookingPage() {
             </div>
           </div>
         </div>
-
       </Layout>
     </>
   );
-  
-    }
+}
 
-      const styles = `
-      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
 
-      :root {
-        --surface: #fffdf9;
-      --surface-2: #f5efe6;
-      --text: #241c17;
-      --muted: #7d7468;
-      --line: #e6ddd1;
-      --accent: #c8a97e;
-      --accent-deep: #b38d5e;
-      --shadow: 0 12px 30px rgba(42, 30, 18, 0.08);
+  :root {
+    --surface: #fffdf9;
+    --surface-2: #f5efe6;
+    --text: #241c17;
+    --muted: #7d7468;
+    --line: #e6ddd1;
+    --accent: #c8a97e;
+    --accent-deep: #b38d5e;
+    --shadow: 0 12px 30px rgba(42, 30, 18, 0.08);
   }
 
-      .bp-root {font - family: 'DM Sans', sans-serif; color: var(--text); }
+  .bp-root { font-family: 'DM Sans', sans-serif; color: var(--text); }
 
-      .bp-hero {
-        background: linear-gradient(135deg, #f7f1e8 0%, #fdfaf6 100%);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      padding: 36px;
-      margin-bottom: 24px;
-      box-shadow: var(--shadow);
+  .bp-hero {
+    background: linear-gradient(135deg, #f7f1e8 0%, #fdfaf6 100%);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    padding: 36px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
   }
 
-      .bp-eyebrow {
-        font - size: 0.74rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--accent-deep);
-      font-weight: 700;
-      margin-bottom: 8px;
-      display: block;
+  .bp-eyebrow {
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-deep);
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: block;
   }
 
-      .bp-title {
-        font - family: 'Playfair Display', serif;
-      font-size: 2.6rem;
-      font-weight: 700;
-      margin: 0 0 8px;
-      color: var(--text);
-      line-height: 1.1;
+  .bp-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: var(--text);
+    line-height: 1.1;
   }
 
-      .bp-subtitle {
-        color: var(--muted);
-      font-size: 0.97rem;
-      margin: 0;
-      line-height: 1.7;
+  .bp-subtitle {
+    color: var(--muted);
+    font-size: 0.97rem;
+    margin: 0;
+    line-height: 1.7;
   }
 
-      .bp-card {
-        background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 28px 32px;
-      margin-bottom: 20px;
-      box-shadow: var(--shadow);
+  .bp-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
   }
 
-      .bp-card-title {
-        font - family: 'Playfair Display', serif;
-      font-size: 1.4rem;
-      font-weight: 700;
-      margin: 0 0 20px;
-      color: var(--text);
+  .bp-card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 0 0 20px;
+    color: var(--text);
   }
 
-      .bp-back-btn {
-        display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: var(--text);
-      cursor: pointer;
-      font-size: 0.88rem;
-      font-family: 'DM Sans', sans-serif;
-      font-weight: 500;
-      margin-bottom: 24px;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 8px rgba(36,28,23,0.06);
+  .bp-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(36, 28, 23, 0.06);
   }
 
   .bp-back-btn:hover { background: var(--text); color: #fff; border-color: var(--text); }
@@ -475,12 +471,12 @@ export default function BookingPage() {
     align-items: start;
   }
 
-      .bp-activity-img {
-        width: 140px;
-      height: 100px;
-      object-fit: cover;
-      border-radius: 14px;
-      border: 1px solid var(--line);
+  .bp-booking-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: sticky;
+    top: 24px;
   }
 
   .bp-step-label {
@@ -640,26 +636,15 @@ export default function BookingPage() {
     box-shadow: 0 6px 20px rgba(36, 28, 23, 0.2);
   }
 
-      .bp-cal-wrap .fc {font - family: 'DM Sans', sans-serif !important; color: var(--text) !important; }
-      .bp-cal-wrap .fc-toolbar-title {font - family: 'Playfair Display', serif !important; font-size: 1.1rem !important; color: var(--text) !important; }
-      .bp-cal-wrap .fc-button-primary {background - color: var(--text) !important; border-color: var(--text) !important; font-family: 'DM Sans', sans-serif !important; font-weight: 600 !important; border-radius: 8px !important; padding: 6px 14px !important; font-size: 0.82rem !important; color: #fff !important; }
-      .bp-cal-wrap .fc-button-primary:hover {background - color: var(--accent-deep) !important; border-color: var(--accent-deep) !important; }
-      .bp-cal-wrap .fc-button-primary:disabled {background - color: var(--muted) !important; border-color: var(--muted) !important; opacity: 0.6 !important; }
-      .bp-cal-wrap .fc-col-header-cell {background: var(--surface-2) !important; padding: 8px 0 !important; font-size: 0.82rem !important; font-weight: 600 !important; color: var(--text) !important; }
-      .bp-cal-wrap .fc-timegrid-slot-label-cushion {font - size: 0.8rem !important; color: var(--muted) !important; font-family: 'DM Sans', sans-serif !important; }
-      .bp-cal-wrap .fc-timegrid-slot {border - color: var(--line) !important; height: 48px !important; }
-      .bp-cal-wrap .fc-scrollgrid {border - color: var(--line) !important; }
-      .bp-cal-wrap .fc-scrollgrid td, .bp-cal-wrap .fc-scrollgrid th {border - color: var(--line) !important; }
-      .bp-cal-wrap .fc-highlight {background: rgba(200, 169, 126, 0.2) !important; }
-      .bp-cal-wrap .fc-event {border - radius: 8px !important; font-size: 0.82rem !important; font-weight: 600 !important; }
+  .bp-btn-primary { background: var(--text); }
+  .bp-btn-primary:hover:not(:disabled) { background: var(--accent-deep); transform: translateY(-1px); }
+  .bp-btn-secondary { background: var(--accent-deep); }
+  .bp-btn-secondary:hover:not(:disabled) { background: var(--accent); transform: translateY(-1px); }
+  .bp-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 
-      .bp-slot-info {
-        margin - top: 20px;
-      padding: 18px 20px;
-      border-radius: 14px;
-      background: var(--surface-2);
-      border: 1px solid var(--line);
-      font-size: 0.93rem;
-      line-height: 1.7;
+  @media (max-width: 980px) {
+    .bp-booking-grid { grid-template-columns: 1fr; }
+    .bp-booking-sidebar { position: static; }
   }
 `;
+
