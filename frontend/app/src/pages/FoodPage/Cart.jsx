@@ -31,16 +31,16 @@ export default function Cart() {
   const totalPrice = foodTotal + activityPrice;
 
   useEffect(() => {
-  apiClient.get("/food-order/all")
-    .then(res => {
-      const allOrders = res.data.orders ?? [];
-      // only show the manual order
-      const manualOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
-      setOrders(manualOrders);
-      setLoading(false);
-    })
-    .catch(err => { console.error("Fetch error:", err); setLoading(false); });
-}, []);
+    apiClient.get("/food-order/all")
+      .then(res => {
+        const allOrders = res.data.orders ?? [];
+        // only show the manual order
+        const manualOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+        setOrders(manualOrders);
+        setLoading(false);
+      })
+      .catch(err => { console.error("Fetch error:", err); setLoading(false); });
+  }, []);
 
   const handleDelete = async (order_id) => {
     await apiClient.delete(`/food-order/${order_id}`);
@@ -184,20 +184,25 @@ export default function Cart() {
                     <div>
                       <p className="cart-booking-slot-label">Time Slot</p>
                       <p className="cart-booking-slot-value">
-                        {new Date(bookingSlot.start).toLocaleDateString([], {
+                        {new Date(bookingSlot.start).toLocaleDateString("en-SG", {
+                          timeZone: "Asia/Singapore",
                           weekday: "short",
                           month: "short",
                           day: "numeric",
                         })}
                         {" · "}
-                        {new Date(bookingSlot.start).toLocaleTimeString([], {
+                        {new Date(bookingSlot.start).toLocaleTimeString("en-SG", {
+                          timeZone: "Asia/Singapore",
                           hour: "2-digit",
                           minute: "2-digit",
+                          hour12: true,
                         })}
                         {" — "}
-                        {new Date(bookingSlot.end).toLocaleTimeString([], {
+                        {new Date(bookingSlot.end).toLocaleTimeString("en-SG", {
+                          timeZone: "Asia/Singapore",
                           hour: "2-digit",
                           minute: "2-digit",
+                          hour12: true,
                         })}
                       </p>
                     </div>
