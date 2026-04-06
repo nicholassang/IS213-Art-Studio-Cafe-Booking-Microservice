@@ -185,21 +185,21 @@ export default function Cart() {
                       <p className="cart-booking-slot-label">Time Slot</p>
                       <p className="cart-booking-slot-value">
                         {new Date(bookingSlot.start).toLocaleDateString("en-SG", {
-                          timeZone: "Asia/Singapore",
+                          timeZone: "UTC",
                           weekday: "short",
                           month: "short",
                           day: "numeric",
                         })}
                         {" · "}
                         {new Date(bookingSlot.start).toLocaleTimeString("en-SG", {
-                          timeZone: "Asia/Singapore",
+                          timeZone: "UTC",
                           hour: "2-digit",
                           minute: "2-digit",
                           hour12: true,
                         })}
                         {" — "}
                         {new Date(bookingSlot.end).toLocaleTimeString("en-SG", {
-                          timeZone: "Asia/Singapore",
+                          timeZone: "UTC",
                           hour: "2-digit",
                           minute: "2-digit",
                           hour12: true,
