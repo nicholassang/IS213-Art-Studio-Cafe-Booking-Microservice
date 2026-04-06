@@ -1,9 +1,13 @@
 import axios from "axios";
 
+const BACKEND_BASE =
+  import.meta.env.VITE_BACKEND_BASE ||
+  (import.meta.env.DEV ? "http://localhost:8000" : "/api");
+
 const apiClient = axios.create({
   // use the same host name the browser actually uses, not 127.0.0.1
   // avoiding a different hostname keeps the session cookie in the "same-site" scope
-  baseURL: "http://localhost:8000",
+  baseURL: BACKEND_BASE,
   withCredentials: true,
 });
 
