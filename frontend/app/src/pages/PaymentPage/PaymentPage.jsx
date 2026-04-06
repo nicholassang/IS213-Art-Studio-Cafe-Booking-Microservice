@@ -241,7 +241,11 @@ export default function PaymentPage() {
   const bookingSlot = location.state?.bookingSlot ||
     JSON.parse(sessionStorage.getItem("bookingSlot") || "null");
   const orders = location.state?.orders || [];
-  const totalPrice = location.state?.totalPrice || bookingActivity?.price || 0;
+  
+  // Calculate total price based on whether there's an activity or just food
+  const foodTotal = orders.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const activityPrice = bookingActivity?.price || 0;
+  const totalPrice = foodTotal + activityPrice;
 
   // Convert totalPrice (dollars) to cents for Stripe
   const amountInCents = Math.round(totalPrice * 100);
@@ -282,8 +286,11 @@ export default function PaymentPage() {
 
   const handleSuccess = (result) => {
     // Clear session storage after successful payment
-    sessionStorage.removeItem("bookingActivity");
-    sessionStorage.removeItem("bookingSlot");
+    if (bookingActivity) {
+      // Clear booking data for activity bookings
+      sessionStorage.removeItem("bookingActivity");
+      sessionStorage.removeItem("bookingSlot");
+    }
     setBookingConfirmed(Boolean(result?.success));
   };
 
@@ -298,9 +305,11 @@ export default function PaymentPage() {
 
           <div className="pay-hero">
             <span className="pay-eyebrow">Secure Checkout</span>
-            <h1 className="pay-title">Complete Your Booking 🎨</h1>
+            <h1 className="pay-title">{bookingActivity ? "Complete Your Booking 🎨" : "Complete Your Order 🍽️"}</h1>
             <p className="pay-subtitle">
-              Review your booking and complete payment to secure your spot at the studio.
+              {bookingActivity 
+                ? "Review your booking and complete payment to secure your spot at the studio."
+                : "Review your order and complete payment for your food order."}
             </p>
           </div>
 

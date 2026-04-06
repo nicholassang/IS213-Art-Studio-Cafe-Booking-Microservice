@@ -32,8 +32,6 @@ ODC_VOUCHER_URL = os.getenv(
     "https://personal-xgmyo0qv.outsystemscloud.com/Voucher/rest/VoucherAPI"
 )
 
-# ─── Request models ───────────────────────────────────────────────────────────
-
 class CreateIntentRequest(BaseModel):
     Amount: int
     Currency: str = "sgd"
@@ -47,7 +45,6 @@ class ProcessPaymentRequest(BaseModel):
     PaymentMethod: str
     VoucherCode: Optional[str] = ""
 
-
 class LegacyProcessPaymentRequest(BaseModel):
     amount: float
     currency: str = "sgd"
@@ -57,13 +54,12 @@ class LegacyProcessPaymentRequest(BaseModel):
 class ValidateVoucherRequest(BaseModel):
     VoucherCode: str
 
-# ─── Health check ─────────────────────────────────────────────────────────────
+class RefundPaymentRequest(BaseModel):
+    PaymentIntentId: str
 
 @app.get("/")
 async def home():
     return {"message": "Payment wrapper is running"}
-
-# ─── Payment endpoints ────────────────────────────────────────────────────────
 
 @app.post("/payment/create-intent")
 async def create_payment_intent(payload: CreateIntentRequest):
@@ -101,7 +97,7 @@ async def cancel_payment_intent(payload: CancelIntentRequest):
         try:
             res = await client.post(
                 f"{ODC_PAYMENT_URL}/CancelPaymentIntent",
-                params={"PaymentIntentId": payload.PaymentIntentId},  # ← change json= to params=
+                params={"PaymentIntentId": payload.PaymentIntentId},
                 timeout=30.0
             )
             res.raise_for_status()
@@ -157,7 +153,29 @@ async def process_payment_legacy(payload: LegacyProcessPaymentRequest):
     return await process_payment(mapped_payload)
 
 
-# ─── Voucher endpoints ────────────────────────────────────────────────────────
+@app.post("/payment/refund")
+async def refund_payment(payload: RefundPaymentRequest):
+    """Process a full refund for a Stripe PaymentIntent via ODC"""
+    if not payload.PaymentIntentId:
+        raise HTTPException(status_code=400, detail="PaymentIntentId is required")
+
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.post(
+                f"{ODC_PAYMENT_URL}/RefundPayment",
+                json={"PaymentIntentId": payload.PaymentIntentId},
+                timeout=30.0
+            )
+            res.raise_for_status()
+            return res.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"ODC error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"ODC unreachable: {str(e)}")
+
 
 @app.post("/voucher/validate")
 async def validate_voucher(payload: ValidateVoucherRequest):

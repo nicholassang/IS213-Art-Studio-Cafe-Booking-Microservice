@@ -110,9 +110,10 @@ const styles = `
 
   .home-btn-secondary {
     padding: 15px 22px;
-    background: #fffaf3;
-    border: 1px solid var(--line);
+    background: var(--text);
+    border: 2px solid var(--text);
     border-radius: 16px;
+    color: #faf8f5;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
@@ -120,7 +121,8 @@ const styles = `
   }
 
   .home-btn-secondary:hover {
-    background: #f6eee2;
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
     transform: translateY(-1px);
   }
 
@@ -398,6 +400,7 @@ export default function HomePage() {
   const [bookingActionMessage, setBookingActionMessage] = useState("");
   const [cancelingBookingId, setCancelingBookingId] = useState(null);
   const [collapsedBookings, setCollapsedBookings] = useState(() => Object.create(null));
+  const [cancelConfirm, setCancelConfirm] = useState(null); // holds booking to confirm cancel
 
   useEffect(() => {
     if (!user?.username) {
@@ -446,27 +449,42 @@ export default function HomePage() {
       return;
     }
 
+    // Get the PaymentIntentId from the booking record
+    const booking = bookings.find((b) => b.id === bookingId);
+    const paymentIntentId = booking?.payment?.PaymentIntentId;
+
+    if (!paymentIntentId) {
+      setBookingsError("Cannot process refund — payment reference not found.");
+      return;
+    }
+
     setCancelingBookingId(bookingId);
     setBookingsError("");
     setBookingActionMessage("");
 
     try {
-      const response = await apiClient.patch(`/bookings/${bookingId}/cancel`, null, {
-        params: { user_name: user.username },
+      // Call composite service — handles refund + booking status update
+      const response = await apiClient.post(`/booking/${bookingId}/cancel`, {
+        user_name: user.username,
+        payment_intent_id: paymentIntentId,
       });
 
       const updatedBooking = response.data.booking;
 
       setBookings((currentBookings) =>
-        currentBookings.map((booking) =>
-          booking.id === bookingId
-            ? { ...booking, ...(updatedBooking || {}), status: updatedBooking?.status || "cancelled" }
-            : booking
+        currentBookings.map((b) =>
+          b.id === bookingId
+            ? { ...b, ...(updatedBooking || {}), status: updatedBooking?.status || "cancelled" }
+            : b
         )
       );
-      setBookingActionMessage(response.data.message || "Booking cancelled successfully.");
+      setBookingActionMessage("We're sad to see you go! 💙 Your refund has been processed. Hope to welcome you back to the studio soon!");
     } catch (error) {
-      const message = error.response?.data?.detail || error.response?.data?.message || "Unable to cancel this booking right now.";
+      const detail = error.response?.data?.detail;
+      const message =
+        typeof detail === "object"
+          ? detail?.message || "Unable to cancel this booking right now."
+          : detail || error.response?.data?.message || "Unable to cancel this booking right now.";
       setBookingsError(message);
     } finally {
       setCancelingBookingId(null);
@@ -649,7 +667,7 @@ export default function HomePage() {
                                   <button
                                     type="button"
                                     className="home-booking-action is-danger"
-                                    onClick={() => handleCancelBooking(booking.id)}
+                                    onClick={() => booking.status !== "cancelled" && setCancelConfirm(booking)}
                                     disabled={booking.status === "cancelled" || cancelingBookingId === booking.id}
                                   >
                                     {booking.status === "cancelled"
@@ -677,6 +695,92 @@ export default function HomePage() {
           )}
         </div>
       </Layout>
+
+      {/* Cancellation confirmation modal */}
+      {cancelConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          background: "rgba(36,28,23,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "20px",
+        }}>
+          <div style={{
+            background: "#fffdf9",
+            border: "1px solid #e6ddd1",
+            borderRadius: "28px",
+            padding: "36px 32px",
+            maxWidth: "440px",
+            width: "100%",
+            boxShadow: "0 24px 48px rgba(36,28,23,0.18)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "20px",
+          }}>
+            <div>
+              <p style={{ fontSize: "0.74rem", letterSpacing: "0.13em", textTransform: "uppercase", color: "#b38d5e", fontWeight: 700, margin: "0 0 8px" }}>
+                Confirm Cancellation
+              </p>
+              <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", margin: 0, color: "#241c17" }}>
+                Cancel your booking?
+              </h3>
+            </div>
+
+            <div style={{ background: "#f5efe6", border: "1px solid #e6ddd1", borderRadius: "16px", padding: "18px 20px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem" }}>
+                <span style={{ color: "#7d7468" }}>Activity</span>
+                <span style={{ fontWeight: 600, color: "#241c17" }}>{cancelConfirm.activity_name || cancelConfirm.activity_id}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem" }}>
+                <span style={{ color: "#7d7468" }}>Date</span>
+                <span style={{ fontWeight: 600, color: "#241c17" }}>{formatBookingDateTime(cancelConfirm.start_time)}</span>
+              </div>
+              <div style={{ height: "1px", background: "#e6ddd1" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem" }}>
+                <span style={{ fontWeight: 700, color: "#241c17" }}>Refund amount</span>
+                <span style={{ fontWeight: 700, color: "#2d6e2d", fontFamily: "'Playfair Display', serif", fontSize: "1.2rem" }}>
+                  {formatBookingAmount(cancelConfirm.total_amount)}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: "0.88rem", color: "#7d7468", margin: 0, lineHeight: 1.6 }}>
+              Your refund will be processed immediately back to your original payment method. This action cannot be undone.
+            </p>
+
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => setCancelConfirm(null)}
+                style={{
+                  flex: 1, padding: "14px", borderRadius: "14px",
+                  border: "1px solid #e6ddd1", background: "#fffaf3",
+                  color: "#241c17", fontWeight: 600, cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif", fontSize: "0.92rem",
+                  transition: "0.2s",
+                }}
+              >
+                Keep booking
+              </button>
+              <button
+                onClick={async () => {
+                  const bookingToCancel = cancelConfirm;
+                  setCancelConfirm(null);
+                  await handleCancelBooking(bookingToCancel.id);
+                }}
+                disabled={cancelingBookingId === cancelConfirm?.id}
+                style={{
+                  flex: 1, padding: "14px", borderRadius: "14px",
+                  border: "1px solid #e5b8b2", background: "#fff6f4",
+                  color: "#8a2f24", fontWeight: 600, cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif", fontSize: "0.92rem",
+                  transition: "0.2s",
+                }}
+              >
+                Yes, cancel & refund
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

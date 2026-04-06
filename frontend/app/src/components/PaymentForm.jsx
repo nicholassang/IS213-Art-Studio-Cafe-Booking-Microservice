@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import VoucherInput from "./VoucherInput";
 import { createPaymentIntent, cancelPaymentIntent } from "../api/paymentApi";
 import apiClient from "../services/apiClient";
 import { useAuth } from "../context/AuthContext";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -302,11 +306,23 @@ const styles = `
     color: #b83232;
     font-weight: 500;
   }
+  .pf-card-element-wrap {
+    padding: 13px 16px;
+    border: 1.5px solid #e6ddd1;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.92);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .pf-card-element-wrap.focused {
+    border-color: #c8a97e;
+    box-shadow: 0 0 0 4px rgba(200, 169, 126, 0.12);
+  }
 `;
 
 const TIMER_SECONDS = 300;
 
-export default function PaymentForm({
+function PaymentFormInner({
   amount = 5000,
   currency = "sgd",
   bookingActivity = null,
@@ -317,6 +333,9 @@ export default function PaymentForm({
   onSuccess,
 }) {
   const { user } = useAuth();
+  const stripe = useStripe();
+  const elements = useElements();
+  const [cardFocused, setCardFocused] = useState(false);
 
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [cardNumber, setCardNumber] = useState("");
@@ -437,8 +456,14 @@ export default function PaymentForm({
       return;
     }
 
-    if (!cardNumber || !expiry || !cvc) {
-      setError("Please fill in all card details.");
+    if (!stripe || !elements) {
+      setError("Payment system not ready. Please refresh.");
+      return;
+    }
+
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) {
+      setError("Please fill in your card details.");
       return;
     }
 
@@ -446,7 +471,20 @@ export default function PaymentForm({
     setError("");
 
     try {
-      // Call composite /booking endpoint — it handles payment + booking creation
+      // Step 1 — Tokenize card with Stripe.js → get real pm_xxx token
+      const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
+        type: "card",
+        card: cardElement,
+        billing_details: { email: trimmedEmail },
+      });
+
+      if (stripeError) {
+        setError("Payment using this card was unsuccessful, please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Step 2 — Call composite /booking endpoint with real payment method token
       const res = await apiClient.post("/booking", {
         user_name: user?.username || "guest",
         user_email: trimmedEmail,
@@ -454,7 +492,7 @@ export default function PaymentForm({
         start_time: bookingSlot?.start?.toISOString?.() || bookingSlot?.start,
         end_time: bookingSlot?.end?.toISOString?.() || bookingSlot?.end,
         food_items: foodItems,
-        payment_method: "card",
+        payment_method: paymentMethod.id,
         voucher_code: voucher?.code || "",
       });
 
@@ -477,14 +515,14 @@ export default function PaymentForm({
         setSuccess(result);
         onSuccess?.(result);
       } else {
-        setError(result.payment?.ErrorMessage || "Payment failed. Please try again.");
+        setError(result.payment?.ErrorMessage || "Payment using card was unsuccessful, please try again.");
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
       if (typeof detail === "object") {
-        setError(detail?.message || "Payment failed. Please try again.");
+        setError("Payment using card was unsuccessful, please try again.");
       } else {
-        setError(detail || err.message || "Payment failed. Please try again.");
+        setError("Payment using card was unsuccessful, please try again.");
       }
     } finally {
       setLoading(false);
@@ -615,44 +653,29 @@ export default function PaymentForm({
             </div>
 
             <div className="pf-field-group">
-              <span className="pf-label">Card Number</span>
-              <input
-                className="pf-input"
-                placeholder="4242 4242 4242 4242"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                disabled={loading || secondsLeft === 0}
-                maxLength={19}
-              />
-            </div>
-
-            <div className="pf-card-row">
-              <div className="pf-field-group">
-                <span className="pf-label">Expiry</span>
-                <input
-                  className="pf-input"
-                  placeholder="MM/YY"
-                  value={expiry}
-                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                  disabled={loading || secondsLeft === 0}
-                  maxLength={5}
-                />
-              </div>
-              <div className="pf-field-group">
-                <span className="pf-label">CVC</span>
-                <input
-                  className="pf-input"
-                  placeholder="123"
-                  value={cvc}
-                  onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  disabled={loading || secondsLeft === 0}
-                  maxLength={4}
+              <span className="pf-label">Card Details</span>
+              <div className={`pf-card-element-wrap ${cardFocused ? "focused" : ""}`}>
+                <CardElement
+                  options={{
+                    style: {
+                      base: {
+                        fontSize: "15px",
+                        fontFamily: "'DM Sans', sans-serif",
+                        color: "#241c17",
+                        "::placeholder": { color: "#b7ab9c" },
+                      },
+                      invalid: { color: "#b83232" },
+                    },
+                    hidePostalCode: true,
+                  }}
+                  onFocus={() => setCardFocused(true)}
+                  onBlur={() => setCardFocused(false)}
                 />
               </div>
             </div>
 
             <div className="pf-test-note">
-              🧪 <strong>Test mode:</strong> Use card <strong>4242 4242 4242 4242</strong>, any future expiry, any CVC.
+              🧪 <strong>Test mode:</strong> Use <strong>4242 4242 4242 4242</strong> to succeed, <strong>4000 0000 0000 0002</strong> to decline.
             </div>
 
             <div className="pf-separator" />
@@ -674,7 +697,7 @@ export default function PaymentForm({
               </div>
             </div>
 
-            {error && <div className="pf-error-box">⚠️ {error}</div>}
+            {error && <div className="pf-error-box">{error}</div>}
 
             <button
               className="pf-submit-btn"
@@ -687,5 +710,13 @@ export default function PaymentForm({
         )}
       </div>
     </>
+  );
+}
+
+export default function PaymentForm(props) {
+  return (
+    <Elements stripe={stripePromise}>
+      <PaymentFormInner {...props} />
+    </Elements>
   );
 }

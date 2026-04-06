@@ -1,7 +1,9 @@
 // constants.js
 // Shared across quiz frontend components
 
-export const API_GATEWAY = "/api";
+export const API_GATEWAY =
+  import.meta.env.VITE_BACKEND_BASE ||
+  (import.meta.env.DEV ? "http://localhost:8000" : "/api");
 
 export const CATEGORY_LABELS = {
   food_and_drink: "Food & Drink",

@@ -110,8 +110,8 @@ export default function BookingPage() {
       .filter(([, quantity]) => quantity > 0)
       .map(([foodId, quantity]) => ({ id: Number(foodId), quantity, comment: "" }));
 
-    if (!selectedActivity || !selectedSlot || orderedFoodItems.length === 0) {
-      alert("Please select activity, slot, and at least one food item first");
+    if (!selectedActivity || !selectedSlot) {
+      alert("Please select activity and slot");
       return;
     }
     if (!isFutureDaySlotSelection(selectedSlot, ONE_HOUR_MS)) {

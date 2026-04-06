@@ -52,6 +52,23 @@ class FoodItem(BaseModel):
     comment: Optional[str] = ""
 
 
+class FoodOrderRequest(BaseModel):
+    menu_item_id: int
+    name: str
+    price: float
+    quantity: int = 1
+    comment: Optional[str] = ""
+    image_url: Optional[str] = ""
+
+
+class FoodOnlyPaymentRequest(BaseModel):
+    user_name: str
+    user_email: str
+    food_items: List[FoodOrderRequest]
+    payment_method: str = "card"
+    voucher_code: Optional[str] = ""
+
+
 class BookingRequest(BaseModel):
     user_name: str
     user_email: str
@@ -61,7 +78,12 @@ class BookingRequest(BaseModel):
     food_items: List[FoodItem]
     payment_method: str = "card"
     additional_notes: Optional[str] = None
-    voucher_code: Optional[str] = ""  # ← new field
+    voucher_code: Optional[str] = ""
+
+
+class CancelBookingRequest(BaseModel):
+    user_name: str
+    payment_intent_id: str
 
 
 async def get_slot_availability(client: httpx.AsyncClient, start_time: str, end_time: str, activity_id: str) -> dict:
@@ -94,7 +116,6 @@ async def publish_booking_confirmation_event(event_payload: dict):
 @app.post("/booking")
 async def create_booking(payload: BookingRequest):
     async with httpx.AsyncClient() as client:
-        # Validate activity
         activity_resp = await client.get(f"{ACTIVITY_URL}/activities/{payload.activity_id}")
         if activity_resp.status_code != 200:
             raise HTTPException(status_code=404, detail="Activity not found")
@@ -105,11 +126,9 @@ async def create_booking(payload: BookingRequest):
         if slot_availability.get("remaining_slots", 0) <= 0:
             raise HTTPException(status_code=409, detail="Selected slot is fully booked")
 
-        # Validate food items and create food orders
         food_order_responses = []
         total_amount = 0.0
 
-        # Include activity price in total
         activity_price = float(activity.get("price", 0))
         total_amount += activity_price
 
@@ -137,14 +156,13 @@ async def create_booking(payload: BookingRequest):
 
             food_order_responses.append(food_resp.json().get("order"))
 
-        # Process payment via wrapper — now passing voucher_code
         payment_resp = await client.post(
             f"{PAYMENT_URL}/payment/process",
             json={
                 "Amount": to_minor_units(total_amount),
                 "Currency": PAYMENT_CURRENCY,
                 "PaymentMethod": normalize_payment_method(payload.payment_method),
-                "VoucherCode": payload.voucher_code or "",  # ← pass voucher code
+                "VoucherCode": payload.voucher_code or "",
             },
         )
 
@@ -165,11 +183,8 @@ async def create_booking(payload: BookingRequest):
             )
 
         payment = payment_resp.json()
-
-        # Use FinalAmount from payment if voucher was applied
         final_amount = payment.get("FinalAmount", to_minor_units(total_amount)) / 100
 
-        # Save booking record
         booking_payload = {
             "user_name": payload.user_name,
             "user_email": payload.user_email,
@@ -240,6 +255,131 @@ async def create_booking(payload: BookingRequest):
             "activity": activity,
             "total_amount": final_amount,
             "notification": notification_result,
+        }
+
+
+@app.post("/booking/{booking_id}/cancel")
+async def cancel_booking(booking_id: int, payload: CancelBookingRequest):
+    """Cancel a booking — processes refund then updates booking status"""
+    async with httpx.AsyncClient() as client:
+
+        # Step 1 — Process refund via payment wrapper
+        refund_resp = await client.post(
+            f"{PAYMENT_URL}/payment/refund",
+            json={"PaymentIntentId": payload.payment_intent_id},
+            timeout=30.0,
+        )
+
+        if refund_resp.status_code != 200:
+            refund_error = None
+            try:
+                refund_error = refund_resp.json()
+            except ValueError:
+                refund_error = refund_resp.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Refund failed — booking not cancelled",
+                    "downstream_response": refund_error,
+                },
+            )
+
+        refund = refund_resp.json()
+
+        # Step 2 — Update booking status to cancelled
+        cancel_resp = await client.patch(
+            f"{ACTIVITY_URL}/bookings/{booking_id}/cancel",
+            params={"user_name": payload.user_name},
+            timeout=30.0,
+        )
+
+        if cancel_resp.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail="Refund succeeded but failed to update booking status",
+            )
+
+        cancelled_booking = cancel_resp.json()
+
+        return {
+            "success": True,
+            "booking_id": booking_id,
+            "refund": refund,
+            "booking": cancelled_booking.get("booking"),
+            "status": "cancelled",
+            "message": "Booking cancelled and refund processed successfully",
+        }
+
+
+@app.post("/food-only-payment")
+async def create_food_only_payment(payload: FoodOnlyPaymentRequest):
+    """Process payment for food orders only (no activity booking)"""
+    async with httpx.AsyncClient() as client:
+        total_amount = 0.0
+
+        # Process each food item
+        food_order_responses = []
+        for item in payload.food_items:
+            menu_resp = await client.get(f"{MENU_URL}/menu/{item.menu_item_id}")
+            if menu_resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Menu item {item.menu_item_id} not found")
+
+            menu_item = menu_resp.json()
+            item_total = float(menu_item.get("price", 0)) * item.quantity
+            total_amount += item_total
+
+            order_payload = {
+                "menu_item_id": item.menu_item_id,
+                "name": menu_item.get("name"),
+                "price": float(menu_item.get("price", 0)),
+                "quantity": item.quantity,
+                "comment": item.comment or "Food-only order",
+                "image_url": menu_item.get("image_url", ""),
+            }
+
+            food_resp = await client.post(f"{FOOD_ORDER_URL}/food-order", json=order_payload)
+            if food_resp.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Failed to create food order for {menu_item.get('name')}")
+
+            food_order_responses.append(food_resp.json().get("order"))
+
+        # Process payment
+        payment_resp = await client.post(
+            f"{PAYMENT_URL}/payment/process",
+            json={
+                "Amount": to_minor_units(total_amount),
+                "Currency": PAYMENT_CURRENCY,
+                "PaymentMethod": normalize_payment_method(payload.payment_method),
+                "VoucherCode": payload.voucher_code or "",
+            },
+        )
+
+        if payment_resp.status_code != 200:
+            payment_error = None
+            try:
+                payment_error = payment_resp.json()
+            except ValueError:
+                payment_error = payment_resp.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Payment service failed",
+                    "downstream_status": payment_resp.status_code,
+                    "downstream_response": payment_error,
+                },
+            )
+
+        payment = payment_resp.json()
+        final_amount = payment.get("FinalAmount", to_minor_units(total_amount)) / 100
+
+        return {
+            "success": True,
+            "food_orders": food_order_responses,
+            "payment": payment,
+            "total_amount": final_amount,
+            "message": "Food order payment successful",
         }
 
 
@@ -343,6 +483,14 @@ async def update_food_order_quantity(order_id: int, request: Request):
     body = await request.json()
     async with httpx.AsyncClient() as client:
         res = await client.put(f"{FOOD_ORDER_URL}/food-order/{order_id}/quantity", json=body)
+    return res.json()
+
+
+@app.put("/food-order/{order_id}/comment")
+async def update_food_order_comment(order_id: int, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.put(f"{FOOD_ORDER_URL}/food-order/{order_id}/comment", json=body)
     return res.json()
 
 

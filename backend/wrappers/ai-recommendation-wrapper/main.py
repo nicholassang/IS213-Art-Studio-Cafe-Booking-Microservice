@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 
 from fastapi import FastAPI, HTTPException
 from groq import AsyncGroq
@@ -23,12 +24,16 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.1-8b-instant"
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
 
 
 settings = Settings()
 
-groq_client = AsyncGroq(api_key=settings.groq_api_key)
+groq_client = AsyncGroq(
+    api_key=settings.groq_api_key,
+    timeout=1.0,
+    max_retries=0,
+)
 gemini_client = None
 if settings.gemini_api_key:
     gemini_client = genai.Client(api_key=settings.gemini_api_key)
@@ -101,14 +106,22 @@ async def _call_gemini(system_prompt: str, user_prompt: str, temperature: float)
 
 async def _call_ai(system_prompt: str, user_prompt: str, temperature: float) -> str:
     """Call Groq first, fallback to Gemini if available."""
+    total_start = time.time()
     try:
-        return await _call_groq(system_prompt, user_prompt, temperature)
+        groq_start = time.time()
+        result = await _call_groq(system_prompt, user_prompt, temperature)
+        logger.info(f"Groq completed in {time.time() - groq_start:.2f}s")
+        return result
     except Exception as e:
+        groq_time = time.time() - total_start
         if not gemini_client:
             logger.error(f"Groq failed and Gemini not configured: {e}")
             raise
-        logger.warning(f"Groq failed, falling back to Gemini: {e}")
-        return await _call_gemini(system_prompt, user_prompt, temperature)
+        logger.warning(f"Groq failed after {groq_time:.2f}s, falling back to Gemini")
+        gemini_start = time.time()
+        result = await _call_gemini(system_prompt, user_prompt, temperature)
+        logger.info(f"Gemini completed in {time.time() - gemini_start:.2f}s (total: {time.time() - total_start:.2f}s)")
+        return result
 
 
 def _parse_json_response(text: str) -> dict:
