@@ -8,13 +8,16 @@ export default function Cart() {
   const location = useLocation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const bookingActivity =
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingComment, setEditingComment] = useState("");
+  const [bookingActivity, setBookingActivity] = useState(
     location.state?.bookingActivity ||
-    JSON.parse(sessionStorage.getItem("bookingActivity") || "null");
-  const bookingSlot =
+    JSON.parse(sessionStorage.getItem("bookingActivity") || "null")
+  );
+  const [bookingSlot, setBookingSlot] = useState(
     location.state?.bookingSlot ||
-    JSON.parse(sessionStorage.getItem("bookingSlot") || "null");
+    JSON.parse(sessionStorage.getItem("bookingSlot") || "null")
+  );
 
   useEffect(() => {
     if (bookingActivity)
@@ -50,6 +53,20 @@ export default function Cart() {
     setOrders((prev) =>
       prev.map((o) => (o.order_id === order_id ? { ...o, quantity } : o))
     );
+  };
+
+  const handleUpdateComment = async (order_id) => {
+    await apiClient.put(`/food-order/${order_id}`, { comment: editingComment });
+    setOrders((prev) =>
+      prev.map((o) => (o.order_id === order_id ? { ...o, comment: editingComment } : o))
+    );
+    setEditingCommentId(null);
+    setEditingComment("");
+  };
+
+  const startEditingComment = (order_id, currentComment) => {
+    setEditingCommentId(order_id);
+    setEditingComment(currentComment || "");
   };
 
   const handleProceedToPayment = () => {
@@ -117,6 +134,21 @@ export default function Cart() {
                       }
                     >
                       ✏️ Edit Time Slot
+                    </button>
+                    <button
+                      className="cart-booking-edit-btn cart-booking-remove-btn"
+                      onClick={async () => {
+                        await Promise.all(
+                          orders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
+                        );
+                        sessionStorage.removeItem("bookingActivity");
+                        sessionStorage.removeItem("bookingSlot");
+                        setOrders([]);
+                        setBookingActivity(null);
+                        setBookingSlot(null);
+                      }}
+                    >
+                      🗑️ Remove Booking
                     </button>
                   </div>
                 </div>
@@ -226,8 +258,47 @@ export default function Cart() {
                       />
                       <div>
                         <h3 className="cart-item-name">{item.name}</h3>
-                        {item.comment && (
-                          <p className="cart-item-comment">"{item.comment}"</p>
+                        {editingCommentId === item.order_id ? (
+                          <div className="cart-comment-edit">
+                            <textarea
+                              className="cart-comment-input"
+                              value={editingComment}
+                              onChange={(e) => setEditingComment(e.target.value)}
+                              placeholder="Special request..."
+                              rows={2}
+                            />
+                            <div className="cart-comment-actions">
+                              <button
+                                className="cart-comment-save-btn"
+                                onClick={() => handleUpdateComment(item.order_id)}
+                              >
+                                ✓ Save
+                              </button>
+                              <button
+                                className="cart-comment-cancel-btn"
+                                onClick={() => {
+                                  setEditingCommentId(null);
+                                  setEditingComment("");
+                                }}
+                              >
+                                ✕ Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="cart-comment-display">
+                            {item.comment ? (
+                              <p className="cart-item-comment">"{item.comment}"</p>
+                            ) : (
+                              <p className="cart-item-comment cart-no-comment">No special request</p>
+                            )}
+                            <button
+                              className="cart-edit-comment-btn"
+                              onClick={() => startEditingComment(item.order_id, item.comment)}
+                            >
+                              ✏️ Edit
+                            </button>
+                          </div>
                         )}
                         <p className="cart-item-price">${item.price} each</p>
                       </div>
@@ -496,6 +567,18 @@ const styles = `
     color: #fff;
   }
 
+  .cart-booking-remove-btn {
+    background: #c0504d;
+    border-color: #c0504d;
+    color: #fff;
+  }
+
+  .cart-booking-remove-btn:hover {
+    background: #a03030;
+    border-color: #a03030;
+    color: #fff;
+  }
+
   .cart-booking-body {
     padding: 24px 28px;
     display: flex;
@@ -670,6 +753,107 @@ const styles = `
     color: var(--muted);
     font-style: italic;
     margin: 0;
+  }
+
+  .cart-no-comment {
+    font-style: normal;
+    opacity: 0.6;
+  }
+
+  .cart-comment-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .cart-edit-comment-btn {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .cart-edit-comment-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .cart-comment-edit {
+    margin-bottom: 4px;
+    max-width: 280px;
+  }
+
+  .cart-comment-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    font-style: italic;
+    resize: vertical;
+    margin-bottom: 6px;
+    transition: border-color 0.2s ease;
+  }
+
+  .cart-comment-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+
+  .cart-comment-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .cart-comment-save-btn {
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+  }
+
+  .cart-comment-save-btn:hover {
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
+  }
+
+  .cart-comment-cancel-btn {
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+  }
+
+  .cart-comment-cancel-btn:hover {
+    background: var(--surface-2);
+    border-color: var(--muted);
+    color: var(--text);
   }
 
   .cart-item-price {

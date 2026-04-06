@@ -271,6 +271,18 @@ const styles = `
     cursor: default;
   }
 
+  .detail-error-msg {
+    color: #c0504d;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    background: #fdf0ef;
+    border: 1px solid #f0d0cc;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+  }
+
   .detail-loading {
     display: flex;
     align-items: center;
@@ -296,6 +308,9 @@ export default function FoodDetail() {
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
+  const hasActivity = !!JSON.parse(sessionStorage.getItem("bookingActivity") || "null");
 
   useEffect(() => {
     apiClient.get(`/menu/name/${id}`)
@@ -304,6 +319,11 @@ export default function FoodDetail() {
   }, [id]);
 
   const handleAddToOrder = async () => {
+    if (!hasActivity) {
+      setError("Please book an activity before adding food to your order.");
+      return;
+    }
+    setError("");
     setLoading(true);
     try {
       const res = await apiClient.post("/food-order", {
@@ -388,12 +408,18 @@ export default function FoodDetail() {
               </p>
 
               {/* Add to Order */}
+              {!hasActivity && (
+                <p className="detail-error-msg">⚠️ You need to book an activity before adding food.</p>
+              )}
+              {error && (
+                <p className="detail-error-msg">{error}</p>
+              )}
               <button
                 className="detail-add-btn"
                 onClick={handleAddToOrder}
-                disabled={loading || success}
+                disabled={loading || success || !hasActivity}
               >
-                {success ? "✓ Added!" : loading ? "Adding…" : `Add to Order — $${(item.price * quantity).toFixed(2)}`}
+                {success ? "✓ Added!" : loading ? "Adding…" : !hasActivity ? "Book an Activity First" : `Add to Order — $${(item.price * quantity).toFixed(2)}`}
               </button>
             </div>
           </div>
