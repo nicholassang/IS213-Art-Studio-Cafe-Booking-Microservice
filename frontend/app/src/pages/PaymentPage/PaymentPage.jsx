@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Layout from "../../components/Layout";
 import PaymentForm from "../../components/PaymentForm";
@@ -241,6 +241,16 @@ export default function PaymentPage() {
   const bookingSlot = location.state?.bookingSlot ||
     JSON.parse(sessionStorage.getItem("bookingSlot") || "null");
   const orders = location.state?.orders || [];
+
+  useEffect(() => {
+    if (location.state?.bookingActivity) {
+      sessionStorage.setItem("bookingActivity", JSON.stringify(location.state.bookingActivity));
+    }
+
+    if (location.state?.bookingSlot) {
+      sessionStorage.setItem("bookingSlot", JSON.stringify(location.state.bookingSlot));
+    }
+  }, [location.state]);
   
   // Calculate total price based on whether there's an activity or just food
   const foodTotal = orders.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -260,6 +270,7 @@ export default function PaymentPage() {
     const endDate = new Date(end);
 
     const dateText = startDate.toLocaleDateString("en-SG", {
+      timeZone: "UTC",
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -268,6 +279,7 @@ export default function PaymentPage() {
     const formatTime = (value) =>
       value
         .toLocaleTimeString("en-SG", {
+          timeZone: "UTC",
           hour: "numeric",
           minute: "2-digit",
           hour12: true,

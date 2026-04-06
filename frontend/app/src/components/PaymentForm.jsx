@@ -6,7 +6,8 @@ import { createPaymentIntent, cancelPaymentIntent } from "../api/paymentApi";
 import apiClient from "../services/apiClient";
 import { useAuth } from "../context/AuthContext";
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -406,14 +407,14 @@ function PaymentFormInner({
     if (!start || !end) return "";
 
     const dateOptions = {
-      timeZone: "Asia/Singapore",
+      timeZone: "UTC",
       day: "numeric",
       month: "short",
       year: "numeric",
     };
 
     const timeOptions = {
-      timeZone: "Asia/Singapore",
+      timeZone: "UTC",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -714,6 +715,19 @@ function PaymentFormInner({
 }
 
 export default function PaymentForm(props) {
+  if (!stripePromise) {
+    return (
+      <div className="pf-card">
+        <div className="pf-section-title">Payment is unavailable</div>
+        <div className="pf-divider" />
+        <div className="pf-error-box">
+          Missing frontend Stripe configuration. Set <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong>
+          before building the frontend bundle.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Elements stripe={stripePromise}>
       <PaymentFormInner {...props} />

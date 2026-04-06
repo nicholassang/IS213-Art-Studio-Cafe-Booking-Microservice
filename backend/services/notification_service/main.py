@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import suppress
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -51,23 +50,24 @@ class BookingConfirmationEvent(BaseModel):
     message: str = "Your booking has been confirmed."
 
 
-def format_singapore_range(start_time: str, end_time: str) -> str:
+def format_booking_range(start_time: str, end_time: str) -> str:
     start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
 
-    sg_tz = ZoneInfo("Asia/Singapore")
-    start_sg = start_dt.astimezone(sg_tz)
-    end_sg = end_dt.astimezone(sg_tz)
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
 
-    date_part = start_sg.strftime("%d %b %Y")
-    start_part = start_sg.strftime("%I:%M %p").lstrip("0")
-    end_part = end_sg.strftime("%I:%M %p").lstrip("0")
+    date_part = start_dt.strftime("%d %b %Y")
+    start_part = start_dt.strftime("%I:%M %p").lstrip("0")
+    end_part = end_dt.strftime("%I:%M %p").lstrip("0")
 
     return f"{date_part}, {start_part} to {end_part}"
 
 
 def build_booking_confirmation_email(event: BookingConfirmationEvent) -> tuple[str, str]:
-    formatted_time = format_singapore_range(event.start_time, event.end_time)
+    formatted_time = format_booking_range(event.start_time, event.end_time)
 
     food_subtotal = 0.0
     food_rows = []
