@@ -12,3 +12,6 @@ class OrderItem(BaseModel):
 
 class QuantityUpdate(BaseModel):
     quantity: int
+
+class CommentUpdate(BaseModel):
+    comment: Optional[str] = ""

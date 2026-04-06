@@ -26,6 +26,7 @@ export default function BookingPage() {
   const navigate = useNavigate();
 
   const passedActivity = location.state?.activity || null;
+  const cameFromRecommendation = !!passedActivity;
 
   const [activities, setActivities] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState(
@@ -158,9 +159,16 @@ export default function BookingPage() {
 
           {/* Back buttons */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap" }}>
-            <button className="bp-back-btn" onClick={() => navigate("/activities")}>
-              ← Back to Activities
-            </button>
+            {cameFromRecommendation && (
+              <button className="bp-back-btn" onClick={() => navigate(-1)}>
+                ← Back
+              </button>
+            )}
+            {!cameFromRecommendation && (
+              <button className="bp-back-btn" onClick={() => navigate("/activities")}>
+                ← Back to Activities
+              </button>
+            )}
             {selectedActivity?.id && (
               <button className="bp-back-btn" onClick={() => navigate(`/activity/${selectedActivity.id}`)}>
                 View Activity Details

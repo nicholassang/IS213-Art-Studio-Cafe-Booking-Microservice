@@ -496,26 +496,80 @@ function PaymentFormInner({
         voucher_code: voucher?.code || "",
       });
 
-      const result = res.data;
+      if (isFoodOnly) {
+        // Food-only payment flow
+        const foodItemsPayload = orders.map((order) => ({
+          menu_item_id: order.menu_item_id,
+          name: order.name,
+          price: order.price,
+          quantity: order.quantity,
+          comment: order.comment || "Food-only order",
+          image_url: order.image_url || "",
+        }));
 
-      if (result.success && result.payment?.Success) {
-        clearInterval(timerRef.current);
+        const res = await apiClient.post("/food-only-payment", {
+          user_name: user?.username || "guest",
+          user_email: trimmedEmail,
+          food_items: foodItemsPayload,
+          payment_method: "card",
+          voucher_code: voucher?.code || "",
+        });
 
-        // Clear cart — delete all food orders that were part of this booking
-        try {
-          await Promise.all(
-            orders.map((item) =>
-              apiClient.delete(`/food-order/${item.order_id}`)
-            )
-          );
-        } catch (err) {
-          console.error("Failed to clear cart:", err);
+        const result = res.data;
+
+        if (result.success && result.payment?.Success) {
+          clearInterval(timerRef.current);
+
+          // Clear cart — delete all food orders
+          try {
+            await Promise.all(
+              orders.map((item) =>
+                apiClient.delete(`/food-order/${item.order_id}`)
+              )
+            );
+          } catch (err) {
+            console.error("Failed to clear cart:", err);
+          }
+
+          setSuccess(result);
+          onSuccess?.(result);
+        } else {
+          setError(result.payment?.ErrorMessage || "Payment failed. Please try again.");
         }
-
-        setSuccess(result);
-        onSuccess?.(result);
       } else {
-        setError(result.payment?.ErrorMessage || "Payment failed. Please try again.");
+        // Regular booking flow (activity + food)
+        const res = await apiClient.post("/booking", {
+          user_name: user?.username || "guest",
+          user_email: trimmedEmail,
+          activity_id: bookingActivity?.id,
+          start_time: bookingSlot?.start?.toISOString?.() || bookingSlot?.start,
+          end_time: bookingSlot?.end?.toISOString?.() || bookingSlot?.end,
+          food_items: foodItems,
+          payment_method: "card",
+          voucher_code: voucher?.code || "",
+        });
+
+        const result = res.data;
+
+        if (result.success && result.payment?.Success) {
+          clearInterval(timerRef.current);
+
+          // Clear cart — delete all food orders that were part of this booking
+          try {
+            await Promise.all(
+              orders.map((item) =>
+                apiClient.delete(`/food-order/${item.order_id}`)
+              )
+            );
+          } catch (err) {
+            console.error("Failed to clear cart:", err);
+          }
+
+          setSuccess(result);
+          onSuccess?.(result);
+        } else {
+          setError(result.payment?.ErrorMessage || "Payment failed. Please try again.");
+        }
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
