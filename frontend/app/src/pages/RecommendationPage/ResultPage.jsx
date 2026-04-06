@@ -46,6 +46,23 @@ const styles = `
     letter-spacing: 0.02em;
   }
   .result-header-brand span { color: #c9a87c; }
+  .result-header-back {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #c9a87c;
+    font-size: 0.85rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    padding: 8px 18px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: all 0.25s;
+  }
+  .result-header-back:hover {
+    background: rgba(255,255,255,0.15);
+    color: #faf8f5;
+    transform: translateX(-2px);
+  }
 
   /* ── Loading ── */
   .result-loading {
@@ -1772,6 +1789,7 @@ export default function ResultPage() {
       <div className="result-root">
         <div className="result-header">
           <span className="result-header-brand">Café de <span>Paris</span></span>
+          <button className="result-header-back" onClick={() => navigate(-1)}>← Back</button>
         </div>
 
         {/* Loading state */}
