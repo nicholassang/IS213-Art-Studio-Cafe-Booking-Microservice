@@ -479,6 +479,7 @@ function PaymentFormInner({
       });
 
       if (stripeError) {
+        setError("Payment using this card was unsuccessful, please try again.");
         setLoading(false);
         return;
       }
