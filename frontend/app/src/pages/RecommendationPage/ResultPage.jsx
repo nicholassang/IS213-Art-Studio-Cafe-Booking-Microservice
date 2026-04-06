@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_GATEWAY } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
+import apiClient from "../../services/apiClient";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 20; // 60 seconds max
@@ -404,6 +405,7 @@ const styles = `
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    cursor: pointer;
   }
   .result-activity-card::before {
     content: '';
@@ -422,6 +424,17 @@ const styles = `
     transform: translateX(4px);
   }
   .result-activity-card:hover::before { opacity: 1; }
+  .result-activity-card:active {
+    transform: translateX(2px) scale(0.98);
+  }
+  .result-activity-card.added {
+    background: linear-gradient(135deg, #f0f9f0, #e8f5e8);
+    border-color: #8bc98b;
+  }
+  .result-activity-card.loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
   .result-activity-card:last-child { margin-bottom: 0; }
   .result-activity-rank {
     width: 40px;
@@ -449,6 +462,25 @@ const styles = `
     font-size: 0.9rem;
     line-height: 1.7;
     color: #6b5d52;
+  }
+  .result-activity-add-hint {
+    font-size: 0.72rem;
+    color: #c9a87c;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .result-activity-card:hover .result-activity-add-hint {
+    opacity: 1;
+  }
+  .result-activity-add-hint.added {
+    color: #4caf50;
+    opacity: 1;
   }
 
   /* ── Food & Drink grid ── */
@@ -489,6 +521,27 @@ const styles = `
     margin-bottom: 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid #e8e2da;
+    cursor: pointer;
+    transition: all 0.3s;
+    border-radius: 8px;
+    padding: 12px;
+    margin-left: -12px;
+    margin-right: -12px;
+    position: relative;
+  }
+  .result-food-drink-item:hover {
+    background: rgba(201,168,124,0.08);
+  }
+  .result-food-drink-item:active {
+    transform: scale(0.98);
+  }
+  .result-food-drink-item.added {
+    background: rgba(76,175,80,0.08);
+    border-color: #8bc98b;
+  }
+  .result-food-drink-item.loading {
+    opacity: 0.6;
+    pointer-events: none;
   }
   .result-food-drink-item:last-child {
     margin-bottom: 0;
@@ -516,6 +569,21 @@ const styles = `
     font-size: 0.85rem;
     line-height: 1.65;
     color: #6b5d52;
+  }
+  .result-food-drink-add-hint {
+    font-size: 0.68rem;
+    color: #c9a87c;
+    font-weight: 600;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .result-food-drink-item:hover .result-food-drink-add-hint {
+    opacity: 1;
+  }
+  .result-food-drink-add-hint.added {
+    color: #4caf50;
+    opacity: 1;
   }
 
   /* ── Closing ── */
@@ -612,10 +680,413 @@ const styles = `
     .result-profile-title { font-size: 1.7rem; }
     .result-scores { grid-template-columns: 1fr; gap: 16px; }
     .result-food-drink-grid { grid-template-columns: 1fr; }
-    .result-activity-card { flex-direction: column; gap: 14px; }
+    .result-item-card-with-image { flex-direction: column; gap: 14px; }
+    .result-item-image-wrap { width: 100%; max-width: none; height: 160px; }
     .result-confidence { flex-wrap: wrap; }
     .result-actions { flex-direction: column; }
     .result-retake-btn, .result-view-past-btn { width: 100%; justify-content: center; }
+    .result-cart-summary { padding: 20px; }
+    .result-cart-item-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .result-cart-item-count { align-self: flex-end; }
+    .result-cart-footer { flex-direction: column; gap: 12px; }
+    .result-cart-proceed-btn { width: 100%; justify-content: center; }
+  }
+
+  /* ── Cart Summary Section ── */
+  .result-cart-summary {
+    background: #fff;
+    border: 2px solid #c9a87c;
+    border-radius: 16px;
+    padding: 24px 28px;
+    position: relative;
+    overflow: hidden;
+    animation: fade-in 0.5s ease;
+    box-shadow: 0 4px 16px rgba(201,168,124,0.15);
+  }
+  .result-cart-summary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #c9a87c, #e8c99a, #c9a87c);
+  }
+  .result-cart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e8e2da;
+  }
+  .result-cart-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #1a1612;
+  }
+  .result-cart-title::before {
+    content: '🛒';
+    font-size: 1.3rem;
+  }
+  .result-cart-count {
+    background: linear-gradient(135deg, #c9a87c, #a8845a);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .result-cart-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .result-cart-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #faf8f5, #f5f1ea);
+    border-radius: 10px;
+    border: 1px solid #e8e2da;
+  }
+  .result-cart-item-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+  }
+  .result-cart-item-image {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #e8e2da, #d8d2ca);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+  }
+  .result-cart-item-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .result-cart-item-details { flex: 1; }
+  .result-cart-item-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #1a1612;
+    margin-bottom: 2px;
+  }
+  .result-cart-item-type {
+    font-size: 0.72rem;
+    color: #8a7d6f;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .result-cart-item-count {
+    background: #c9a87c;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .result-cart-item-total {
+    font-size: 0.95rem;
+    color: #c9a87c;
+    font-weight: 700;
+    white-space: nowrap;
+    min-width: 55px;
+    text-align: right;
+  }
+  .result-cart-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid #e8e2da;
+  }
+  .result-cart-total-text {
+    font-size: 0.9rem;
+    color: #6b5d52;
+    font-weight: 600;
+  }
+  .result-cart-total-text span {
+    color: #c9a87c;
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-family: 'Playfair Display', serif;
+  }
+  .result-cart-proceed-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #c9a87c, #a8845a);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 14px rgba(201,168,124,0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .result-cart-proceed-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(201,168,124,0.4);
+  }
+  .result-cart-proceed-btn::before {
+    content: '→';
+    font-size: 1.1rem;
+  }
+  .result-cart-empty {
+    text-align: center;
+    padding: 20px;
+    color: #8a7d6f;
+  }
+  .result-cart-empty-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+  .result-cart-empty-text {
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  /* ── Cart Remove Button ── */
+  .result-cart-remove-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #e8e2da;
+    background: linear-gradient(135deg, #fff5f2, #ffe8e2);
+    color: #d45a4a;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+  }
+  .result-cart-remove-btn:hover {
+    background: linear-gradient(135deg, #ffe8e2, #ffd5c8);
+    border-color: #d45a4a;
+    transform: scale(1.1);
+    box-shadow: 0 3px 10px rgba(212,90,74,0.2);
+  }
+  .result-cart-remove-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* ── Cart Quantity Buttons ── */
+  .result-cart-qty-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid #e8e2da;
+    background: linear-gradient(135deg, #faf8f5, #f5f1ea);
+    color: #6b5d52;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+  }
+  .result-cart-qty-btn:hover {
+    background: linear-gradient(135deg, #f5f1ea, #ede8e0);
+    border-color: #c9a87c;
+    transform: scale(1.1);
+    box-shadow: 0 3px 10px rgba(201,168,124,0.2);
+  }
+  .result-cart-qty-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* ── Add to Cart Button ── */
+  .result-add-to-cart-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    min-width: 120px;
+    background: linear-gradient(135deg, #c9a87c, #a8845a);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 3px 10px rgba(201,168,124,0.3);
+    margin-top: 12px;
+    white-space: nowrap;
+    position: relative;
+  }
+  .result-add-to-cart-btn::before {
+    content: '🛒';
+    font-size: 0.9rem;
+  }
+  .result-add-to-cart-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(201,168,124,0.4);
+  }
+  .result-add-to-cart-btn:active {
+    transform: translateY(0);
+  }
+  .result-add-to-cart-btn.added {
+    background: linear-gradient(135deg, #4caf50, #45a049);
+    box-shadow: 0 3px 10px rgba(76,175,80,0.3);
+    min-width: 50px;
+    position: relative;
+    padding: 10px;
+    gap: 0;
+  }
+  .result-add-to-cart-btn.added::before {
+    content: '';
+    display: none;
+  }
+  .result-add-to-cart-btn.added:hover {
+    background: linear-gradient(135deg, #d45a4a, #c44a3a);
+    box-shadow: 0 3px 10px rgba(212,90,74,0.3);
+    color: transparent !important;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .result-add-to-cart-btn.added:hover::after {
+    content: '✕';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .result-add-to-cart-btn.loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .result-add-to-cart-btn.disabled {
+    background: #e8e2da;
+    color: #8a7d6f;
+    box-shadow: none;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  .result-add-to-cart-btn.disabled::before {
+    content: '';
+  }
+
+  /* ── Item Card with Image ── */
+  .result-item-card-with-image {
+    display: flex;
+    gap: 20px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, #faf8f5, #f5f1ea);
+    border: 1px solid #e8e2da;
+    border-radius: 14px;
+    margin-bottom: 14px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .result-item-card-with-image::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #c9a87c, #b38d5e);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .result-item-card-with-image:hover {
+    border-color: #c9a87c;
+    box-shadow: 0 6px 20px rgba(201,168,124,0.15);
+    transform: translateX(4px);
+  }
+  .result-item-card-with-image:hover::before { opacity: 1; }
+  .result-item-card-with-image:last-child { margin-bottom: 0; }
+  .result-item-card-with-image.added {
+    background: linear-gradient(135deg, #f0f9f0, #e8f5e8);
+    border-color: #8bc98b;
+  }
+  .result-item-card-with-image.loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .result-item-image-wrap {
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #e8e2da, #d8d2ca);
+  }
+  .result-item-image-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .result-item-info { flex: 1; }
+  .result-item-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .result-item-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a1612;
+  }
+  .result-item-price {
+    font-size: 0.95rem;
+    color: #c9a87c;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .result-item-rank {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #c9a87c;
+    background: rgba(201,168,124,0.15);
+    padding: 3px 10px;
+    border-radius: 100px;
+    margin-bottom: 8px;
+  }
+  .result-item-explanation {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: #6b5d52;
+    margin-bottom: 4px;
   }
 `;
 
@@ -630,6 +1101,102 @@ export default function ResultPage() {
   const [confWidth, setConfWidth] = useState(0);
   const [soloWidth, setSoloWidth] = useState(0);
   const [structuredWidth, setStructuredWidth] = useState(0);
+  const [cartLoading, setCartLoading] = useState({});
+  const [addedItems, setAddedItems] = useState({});
+  const [cartItems, setCartItems] = useState([]);
+  const [activitiesData, setActivitiesData] = useState([]);
+  const [menuData, setMenuData] = useState([]);
+  const [bookedActivity, setBookedActivity] = useState(null);
+
+  useEffect(() => {
+    // Check if there's already a booked activity from sessionStorage
+    const existingBooking = sessionStorage.getItem("bookingActivity");
+    if (existingBooking) {
+      setBookedActivity(JSON.parse(existingBooking));
+    }
+  }, []);
+
+  useEffect(() => {
+    // Fetch existing cart items from API
+    const fetchCartItems = async () => {
+      try {
+        const res = await apiClient.get("/food-order/all");
+        const allOrders = res.data.orders ?? [];
+        // Show all food/drink orders (exclude booking comments)
+        const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+        
+        // Map API orders to local cart format
+        const mappedItems = foodDrinkOrders.map(order => {
+          // Determine type from comment or default to food
+          const typeMatch = order.comment?.match(/\((food|drink)\)/);
+          const itemType = typeMatch ? typeMatch[1] : "food";
+          
+          return {
+            name: order.name,
+            price: order.price,
+            image_url: order.image_url || "",
+            type: itemType,
+            key: `${itemType}-${order.name}`,
+            order_id: order.order_id,
+            quantity: order.quantity,
+          };
+        });
+
+        setCartItems(mappedItems);
+
+        // Mark items as added - match by name only
+        const addedMap = {};
+        mappedItems.forEach(item => {
+          // Mark both quiz-specific and general keys
+          addedMap[item.key] = true;
+          // Also mark without type prefix for broader matching
+          addedMap[`food-${item.name}`] = true;
+          addedMap[`drink-${item.name}`] = true;
+        });
+        setAddedItems(addedMap);
+
+        console.log("Loaded existing cart items:", mappedItems.length);
+      } catch (err) {
+        console.error("Failed to fetch cart items:", err);
+      }
+    };
+
+    fetchCartItems();
+
+    // Refresh cart every 5 seconds to catch changes from other pages
+    const intervalId = setInterval(fetchCartItems, 5000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [activitiesRes, menuRes] = await Promise.all([
+          fetch(`${API_GATEWAY}/activities`),
+          apiClient.get("/menu"),
+        ]);
+
+        if (activitiesRes.ok) {
+          const data = await activitiesRes.json();
+          // API returns { activities: [...] } - extract the array
+          setActivitiesData(data.activities || []);
+          console.log("Fetched activities:", data.activities?.length || 0, data.activities);
+        }
+
+        if (menuRes.data) {
+          // API returns { menu: [...] } - extract the array
+          const menuItems = menuRes.data.menu || [];
+          setMenuData(menuItems);
+          console.log("Fetched menu items:", menuItems.length, menuItems);
+        }
+      } catch (err) {
+        console.error("Failed to fetch activities or menu data:", err);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   useEffect(() => {
     let polls = 0;
@@ -733,6 +1300,333 @@ export default function ResultPage() {
     navigate("/");
   };
 
+  const handleAddToCart = async (itemType, itemName) => {
+    const itemKey = `${itemType}-${itemName}`;
+    setCartLoading((prev) => ({ ...prev, [itemKey]: true }));
+
+    try {
+      // Find the item in activities or menu data to get image and price
+      let itemData = {};
+      let menuItemId = 0;
+
+      // Generate a unique menu_item_id for activities (use hash of name)
+      if (itemType === "activity") {
+        // If this activity is already booked, unbook it
+        if (addedItems[itemKey]) {
+          sessionStorage.removeItem("bookingActivity");
+          setBookedActivity(null);
+          setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+          console.log("Activity unbooked!");
+          setCartLoading((prev) => ({ ...prev, [itemKey]: false }));
+          return;
+        }
+
+        const activity = activitiesData.find(a =>
+          a.name.toLowerCase().trim() === itemName.toLowerCase().trim() ||
+          a.name.toLowerCase().includes(itemName.toLowerCase()) ||
+          itemName.toLowerCase().includes(a.name.toLowerCase())
+        );
+        console.log("Looking for activity:", itemName, "Found:", activity);
+        if (activity) {
+          itemData = {
+            id: activity.id,
+            name: activity.name,
+            price: activity.price,
+            image: activity.image || "",
+            category: activity.category || "",
+            level: activity.level || "",
+            duration: activity.duration || "",
+            type: "activity",
+          };
+          console.log("Activity image URL:", activity.image);
+
+          // If there was a previous activity, unmark it
+          Object.keys(addedItems).forEach(key => {
+            if (key.startsWith("activity-") && key !== itemKey) {
+              setAddedItems((prev) => ({ ...prev, [key]: false }));
+            }
+          });
+
+          // Store activity in sessionStorage for "Your Booking" section
+          sessionStorage.setItem("bookingActivity", JSON.stringify(itemData));
+          setBookedActivity(itemData);
+          setAddedItems((prev) => ({ ...prev, [itemKey]: true }));
+          console.log("Activity booked! Stored to sessionStorage");
+        } else {
+          console.warn("Activity not found in database:", itemName, "Available:", activitiesData.map(a => a.name));
+        }
+      } else {
+        const menuItem = menuData.find(m =>
+          m.name.toLowerCase().trim() === itemName.toLowerCase().trim() ||
+          m.name.toLowerCase().includes(itemName.toLowerCase()) ||
+          itemName.toLowerCase().includes(m.name.toLowerCase())
+        );
+        console.log("Looking for menu item:", itemName, "Found:", menuItem);
+        if (menuItem) {
+          itemData = {
+            name: menuItem.name,
+            price: menuItem.price,
+            image_url: menuItem.image_url || "",
+            type: itemType,
+          };
+          menuItemId = menuItem.id;
+          console.log("Menu item image URL:", menuItem.image_url, "Price:", menuItem.price);
+          
+          const payload = {
+            menu_item_id: menuItemId,
+            name: itemData.name,
+            price: itemData.price,
+            image_url: itemData.image_url,
+            quantity: 1,
+            comment: `Added from quiz recommendation (${itemData.type})`,
+          };
+
+          console.log("Adding to cart:", payload);
+          const res = await apiClient.post("/food-order", payload);
+          console.log("Cart response:", res.data);
+
+          if (res.data && res.data.success) {
+            setAddedItems((prev) => ({ ...prev, [itemKey]: true }));
+            setCartItems((prev) => [...prev, { ...itemData, key: itemKey }]);
+            console.log("Item added! Cart items:", cartItems.length + 1);
+          } else {
+            console.error("Add to cart failed: API did not return success", res.data);
+          }
+        } else {
+          console.warn("Menu item not found in database:", itemName, "Available:", menuData.map(m => m.name));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to add to cart:", err);
+      console.error("Error details:", err.response?.data || err.message);
+    } finally {
+      setCartLoading((prev) => ({ ...prev, [itemKey]: false }));
+    }
+  };
+
+  const handleRemoveFromCart = async (itemType, itemName) => {
+    const itemKey = `${itemType}-${itemName}`;
+
+    try {
+      // Handle activity removal
+      if (itemType === "activity") {
+        sessionStorage.removeItem("bookingActivity");
+        setBookedActivity(null);
+        setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+        console.log("Activity removed from cart");
+      } else {
+        // Handle food/drink removal - find item by name (case-insensitive)
+        const matchingItems = cartItems.filter(item => 
+          item.name.toLowerCase() === itemName.toLowerCase()
+        );
+        if (matchingItems.length > 0) {
+          const itemToRemove = matchingItems[0];
+          // If we have an order_id, use it to delete
+          if (itemToRemove.order_id) {
+            try {
+              await apiClient.delete(`/food-order/${itemToRemove.order_id}`);
+              console.log("Deleted food order from API by order_id");
+              setCartItems((prev) => prev.filter(item => item.order_id !== itemToRemove.order_id));
+            } catch (err) {
+              console.warn("Could not delete from API, removing from local state only:", err.message);
+              setCartItems((prev) => prev.filter(item => item.order_id !== itemToRemove.order_id));
+            }
+          } else {
+            // Fallback: remove from local state only
+            setCartItems((prev) => prev.filter(item => item.key !== itemKey));
+          }
+        }
+
+        // Check if any instances remain
+        const remainingCount = cartItems.filter(item => 
+          item.name.toLowerCase() === itemName.toLowerCase()
+        ).length - 1;
+        if (remainingCount <= 0) {
+          setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+        }
+        console.log("Food/drink item removed from cart");
+      }
+    } catch (err) {
+      console.error("Failed to remove from cart:", err);
+    }
+  };
+
+  const handleRemoveAllFromCart = async (itemType, itemName) => {
+    const itemKey = `${itemType}-${itemName}`;
+
+    try {
+      // Handle activity removal
+      if (itemType === "activity") {
+        sessionStorage.removeItem("bookingActivity");
+        setBookedActivity(null);
+        setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+        console.log("Activity removed from cart");
+      } else {
+        // Handle food/drink removal - remove ALL instances by name
+        const matchingItems = cartItems.filter(item => 
+          item.name.toLowerCase() === itemName.toLowerCase()
+        );
+        if (matchingItems.length > 0) {
+          // Try to delete all from API using their order_ids
+          try {
+            for (const item of matchingItems) {
+              if (item.order_id) {
+                await apiClient.delete(`/food-order/${item.order_id}`);
+              }
+            }
+            console.log("Deleted all food orders from API");
+          } catch (err) {
+            console.warn("Could not delete from API, removing from local state only:", err.message);
+          }
+        }
+
+        // Remove all instances from local state
+        setCartItems((prev) => prev.filter(item => 
+          item.name.toLowerCase() !== itemName.toLowerCase()
+        ));
+        setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+        console.log("All food/drink items removed from cart");
+      }
+    } catch (err) {
+      console.error("Failed to remove from cart:", err);
+    }
+  };
+
+  const handleIncrementItem = async (itemType, itemName) => {
+    const itemKey = `${itemType}-${itemName}`;
+    const itemData = getItemData(itemType, itemName);
+    try {
+      // Find existing order by name
+      const existingOrder = cartItems.find(item => 
+        item.name.toLowerCase() === itemName.toLowerCase()
+      );
+      if (existingOrder && existingOrder.order_id) {
+        // Update quantity on existing order
+        const newQuantity = (existingOrder.quantity || 1) + 1;
+        await apiClient.put(`/food-order/${existingOrder.order_id}/quantity`, { quantity: newQuantity });
+        
+        // Update local state
+        setCartItems((prev) => prev.map(item => 
+          item.order_id === existingOrder.order_id 
+            ? { ...item, quantity: newQuantity }
+            : item
+        ));
+        console.log("Item quantity incremented via API");
+      } else {
+        // Create new order
+        const payload = {
+          menu_item_id: 0,
+          name: itemData.name,
+          price: itemData.price,
+          image_url: itemData.image_url,
+          quantity: 1,
+          comment: `Added from quiz recommendation (${itemType})`,
+        };
+
+        const res = await apiClient.post("/food-order", payload);
+        if (res.data && res.data.success) {
+          setCartItems((prev) => [...prev, { ...itemData, key: itemKey, type: itemType, quantity: 1 }]);
+          console.log("Item quantity incremented");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to increment item:", err);
+    }
+  };
+
+  const handleDecrementItem = async (itemType, itemName) => {
+    const itemKey = `${itemType}-${itemName}`;
+    try {
+      const existingOrder = cartItems.find(item => 
+        item.name.toLowerCase() === itemName.toLowerCase()
+      );
+      if (existingOrder && existingOrder.order_id) {
+        const currentQty = existingOrder.quantity || 1;
+        if (currentQty <= 1) {
+          // Delete the order
+          await apiClient.delete(`/food-order/${existingOrder.order_id}`);
+          setCartItems((prev) => prev.filter(item => item.order_id !== existingOrder.order_id));
+        } else {
+          // Decrease quantity
+          const newQuantity = currentQty - 1;
+          await apiClient.put(`/food-order/${existingOrder.order_id}/quantity`, { quantity: newQuantity });
+          setCartItems((prev) => prev.map(item => 
+            item.order_id === existingOrder.order_id 
+              ? { ...item, quantity: newQuantity }
+              : item
+          ));
+        }
+        console.log("Item quantity decremented via API");
+      } else {
+        // Fallback: remove from local state
+        setCartItems((prev) => prev.filter(item => 
+          item.name.toLowerCase() !== itemName.toLowerCase()
+        ));
+      }
+
+      const remainingCount = cartItems.filter(item => 
+        item.name.toLowerCase() === itemName.toLowerCase()
+      ).length;
+      if (remainingCount <= 0) {
+        setAddedItems((prev) => ({ ...prev, [itemKey]: false }));
+      }
+    } catch (err) {
+      console.error("Failed to decrement item:", err);
+    }
+  };
+
+  const handleAddMultipleToCart = async (items) => {
+    setCartLoading({});
+    
+    try {
+      for (const item of items) {
+        await apiClient.post("/food-order", {
+          name: item.name,
+          price: 0,
+          image_url: "",
+          quantity: 1,
+          comment: `Added from quiz recommendation (${item.type})`,
+        });
+      }
+      
+      navigate("/cart");
+    } catch (err) {
+      console.error("Failed to add items to cart:", err);
+    }
+  };
+
+  const getItemData = (itemType, itemName) => {
+    if (itemType === "activity") {
+      const activity = activitiesData.find(a => 
+        a.name.toLowerCase() === itemName.toLowerCase() ||
+        a.name.toLowerCase().includes(itemName.toLowerCase()) ||
+        itemName.toLowerCase().includes(a.name.toLowerCase())
+      );
+      return activity ? {
+        name: activity.name,
+        price: activity.price,
+        image_url: activity.image || "",
+      } : { name: itemName, price: 0, image_url: "" };
+    } else {
+      // For food and drinks, try multiple matching strategies
+      const menuItem = menuData.find(m => {
+        const menuName = m.name.toLowerCase();
+        const recName = itemName.toLowerCase();
+        return menuName === recName ||
+               menuName.includes(recName) ||
+               recName.includes(menuName) ||
+               // Handle common variations
+               menuName.replace(/\s+/g, ' ') === recName.replace(/\s+/g, ' ') ||
+               menuName.replace(/[-_]/g, ' ') === recName.replace(/[-_]/g, ' ');
+      });
+      return menuItem ? {
+        name: menuItem.name,
+        price: menuItem.price,
+        image_url: menuItem.image_url || "",
+      } : { name: itemName, price: 0, image_url: "" };
+    }
+  };
+
   const isLowConfidence = result && (result.confidence_score || 0) < 0.5;
 
   return (
@@ -820,10 +1714,6 @@ export default function ResultPage() {
                 </div>
               )}
 
-              {result.scores?.reasoning && (
-                <p className="result-score-reasoning">"{result.scores.reasoning}"</p>
-              )}
-
               {/* Low-confidence notice */}
               {isLowConfidence && (
                 <div className="result-low-confidence-notice">
@@ -842,15 +1732,56 @@ export default function ResultPage() {
                 <h2 className="result-section-title">Your Recommended Activities</h2>
                 {result.activity_explanations
                   .sort((a, b) => a.rank - b.rank)
-                  .map((item) => (
-                    <div key={item.rank} className="result-activity-card">
-                      <div className="result-activity-rank">#{item.rank}</div>
-                      <div className="result-activity-info">
-                        <div className="result-activity-name">{item.activity}</div>
-                        <div className="result-activity-explanation">{item.explanation}</div>
+                  .map((item) => {
+                    const itemKey = `activity-${item.activity}`;
+                    const isAdded = addedItems[itemKey];
+                    const isLoading = cartLoading[itemKey];
+                    const itemData = getItemData("activity", item.activity);
+                    const isOtherActivityBooked = bookedActivity && bookedActivity.name !== item.activity;
+
+                    return (
+                      <div
+                        key={item.rank}
+                        className={`result-item-card-with-image${isAdded ? " added" : ""}${isLoading ? " loading" : ""}`}
+                      >
+                        <div className="result-item-image-wrap">
+                          {itemData.image_url ? (
+                            <img src={itemData.image_url} alt={item.activity} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7d6f", fontSize: "2rem" }}>🎨</div>
+                          )}
+                        </div>
+                        <div className="result-item-info">
+                          <div className="result-item-header">
+                            <div>
+                              <span className="result-item-rank">#{item.rank}</span>
+                              <div className="result-item-name">{item.activity}</div>
+                            </div>
+                            <div className="result-item-price">${itemData.price}</div>
+                          </div>
+                          <div className="result-item-explanation">{item.explanation}</div>
+                          <button
+                            className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${isOtherActivityBooked ? " disabled" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isLoading) {
+                                if (isAdded) {
+                                  // Unbook this activity
+                                  handleAddToCart("activity", item.activity);
+                                } else if (!isOtherActivityBooked) {
+                                  // Book this activity
+                                  handleAddToCart("activity", item.activity);
+                                }
+                              }
+                            }}
+                            disabled={isLoading}
+                          >
+                            {isAdded ? "✓" : isOtherActivityBooked ? "🔒 Locked" : isLoading ? "..." : "Book Activity"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
 
@@ -864,28 +1795,112 @@ export default function ResultPage() {
                       <div className="result-food-drink-card-title">✦ Food Recommendations</div>
                       {result.food_recommendation_details
                         .sort((a, b) => a.rank - b.rank)
-                        .map((item) => (
-                          <div key={item.rank} className="result-food-drink-item">
-                            <span className="result-food-drink-rank">#{item.rank} Pick</span>
-                            <div className="result-food-drink-name">{item.food}</div>
-                            <div className="result-food-drink-explanation">{item.explanation}</div>
-                          </div>
-                        ))}
+                        .map((item) => {
+                          const itemKey = `food-${item.food}`;
+                          const isInCart = cartItems.some(ci => ci.name.toLowerCase() === item.food.toLowerCase());
+                          const isAdded = addedItems[itemKey] || isInCart;
+                          const isLoading = cartLoading[itemKey];
+                          const itemData = getItemData("food", item.food);
+                          
+                          return (
+                            <div 
+                              key={item.rank}
+                              className={`result-item-card-with-image${isAdded ? " added" : ""}${isLoading ? " loading" : ""}`}
+                              style={{ marginBottom: "12px" }}
+                            >
+                              <div className="result-item-image-wrap">
+                                {itemData.image_url ? (
+                                  <img src={itemData.image_url} alt={item.food} />
+                                ) : (
+                                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7d6f", fontSize: "2rem" }}>🍽️</div>
+                                )}
+                              </div>
+                              <div className="result-item-info">
+                                <div className="result-item-header">
+                                  <div>
+                                    <span className="result-item-rank">#{item.rank} Pick</span>
+                                    <div className="result-item-name">{item.food}</div>
+                                  </div>
+                                  <div className="result-item-price">${itemData.price}</div>
+                                </div>
+                                <div className="result-item-explanation">{item.explanation}</div>
+                                <button
+                                  className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isLoading) {
+                                      if (isAdded) {
+                                        handleRemoveFromCart("food", item.food);
+                                      } else {
+                                        handleAddToCart("food", item.food);
+                                      }
+                                    }
+                                  }}
+                                  disabled={isLoading}
+                                >
+                                  {isAdded ? "✓" : isLoading ? "..." : "Add to Cart"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                     </div>
                   )}
 
                   {result.drink_recommendation_details && (
                     <div className="result-food-drink-card">
                       <div className="result-food-drink-card-title">✦ Drink Recommendation</div>
-                      <div className="result-food-drink-item">
-                        <span className="result-food-drink-rank">Perfect Pairing</span>
-                        <div className="result-food-drink-name">
-                          {result.drink_recommendation_details.drink || result.drink_recommendation}
-                        </div>
-                        <div className="result-food-drink-explanation">
-                          {result.drink_recommendation_details.explanation}
-                        </div>
-                      </div>
+                      {(() => {
+                        const drinkName = result.drink_recommendation_details.drink || result.drink_recommendation;
+                        const itemKey = `drink-${drinkName}`;
+                        const isInCart = cartItems.some(ci => ci.name.toLowerCase() === drinkName.toLowerCase());
+                        const isAdded = addedItems[itemKey] || isInCart;
+                        const isLoading = cartLoading[itemKey];
+                        const itemData = getItemData("drink", drinkName);
+                        
+                        return (
+                          <div 
+                            className={`result-item-card-with-image${isAdded ? " added" : ""}${isLoading ? " loading" : ""}`}
+                            style={{ marginBottom: "12px" }}
+                          >
+                            <div className="result-item-image-wrap">
+                              {itemData.image_url ? (
+                                <img src={itemData.image_url} alt={drinkName} />
+                              ) : (
+                                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7d6f", fontSize: "2rem" }}>🥤</div>
+                              )}
+                            </div>
+                            <div className="result-item-info">
+                              <div className="result-item-header">
+                                <div>
+                                  <span className="result-item-rank">Perfect Pairing</span>
+                                  <div className="result-item-name">{drinkName}</div>
+                                </div>
+                                <div className="result-item-price">${itemData.price}</div>
+                              </div>
+                              <div className="result-item-explanation">
+                                {result.drink_recommendation_details.explanation}
+                              </div>
+                              <button
+                                className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isLoading) {
+                                    if (isAdded) {
+                                      handleRemoveFromCart("drink", drinkName);
+                                    } else {
+                                      handleAddToCart("drink", drinkName);
+                                    }
+                                  }
+                                }}
+                                disabled={isLoading}
+                              >
+                                {isAdded ? "✓" : isLoading ? "..." : "Add to Cart"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -896,6 +1911,133 @@ export default function ResultPage() {
             {result.closing && (
               <div className="result-closing">{result.closing}</div>
             )}
+
+            {/* ── Cart Summary ── */}
+            <div className="result-cart-summary">
+              <div className="result-cart-header">
+                <div className="result-cart-title">
+                  Your Cart
+                  {(cartItems.length > 0 || bookedActivity) && (
+                    <span className="result-cart-count">
+                      {bookedActivity ? "1" : ""}{cartItems.length > 0 && bookedActivity ? " + " : ""}{cartItems.length > 0 ? `${cartItems.length} item${cartItems.length !== 1 ? "s" : ""}` : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              {bookedActivity || cartItems.length > 0 ? (
+                <>
+                  <div className="result-cart-items-list">
+                    {bookedActivity && (
+                      <div className="result-cart-item-row">
+                        <div className="result-cart-item-left">
+                          <div className="result-cart-item-image">
+                            {bookedActivity.image || bookedActivity.image_url ? (
+                              <img src={bookedActivity.image || bookedActivity.image_url} alt={bookedActivity.name} />
+                            ) : (
+                              <span>🎨</span>
+                            )}
+                          </div>
+                          <div className="result-cart-item-details">
+                            <div className="result-cart-item-name">{bookedActivity.name}</div>
+                            <div className="result-cart-item-type">Activity Booking</div>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                          <div className="result-cart-item-total">
+                            ${bookedActivity.price}
+                          </div>
+                          <button
+                            className="result-cart-remove-btn"
+                            onClick={() => handleRemoveFromCart("activity", bookedActivity.name)}
+                            title="Remove from cart"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {cartItems.length > 0 && (() => {
+                      // Group items by name and sum their quantities
+                      const itemCounts = {};
+                      cartItems.forEach(item => {
+                        const normalizedName = item.name.toLowerCase();
+                        if (!itemCounts[normalizedName]) {
+                          itemCounts[normalizedName] = { ...item, count: 0, keys: [] };
+                        }
+                        itemCounts[normalizedName].count += (item.quantity || 1);
+                        itemCounts[normalizedName].keys.push(item.key);
+                      });
+
+                      return Object.values(itemCounts).map((item, index) => (
+                        <div key={`${item.name}-${index}`} className="result-cart-item-row">
+                          <div className="result-cart-item-left">
+                            <div className="result-cart-item-image">
+                              {item.image_url ? (
+                                <img src={item.image_url} alt={item.name} />
+                              ) : (
+                                <span>{item.type === "food" ? "🍽️" : "🥤"}</span>
+                              )}
+                            </div>
+                            <div className="result-cart-item-details">
+                              <div className="result-cart-item-name">{item.name}</div>
+                              <div className="result-cart-item-type">{item.type}</div>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <button
+                              className="result-cart-qty-btn"
+                              onClick={() => handleDecrementItem(item.type, item.name)}
+                              title="Decrease quantity"
+                            >
+                              −
+                            </button>
+                            <div className="result-cart-item-count">
+                              × {item.count}
+                            </div>
+                            <button
+                              className="result-cart-qty-btn"
+                              onClick={() => handleIncrementItem(item.type, item.name)}
+                              title="Increase quantity"
+                            >
+                              +
+                            </button>
+                            <div className="result-cart-item-total">
+                              ${(item.price * item.count).toFixed(2)}
+                            </div>
+                            <button
+                              className="result-cart-remove-btn"
+                              onClick={() => handleRemoveAllFromCart(item.type, item.name)}
+                              title="Remove all from cart"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  <div className="result-cart-footer">
+                    <div className="result-cart-total-text">
+                      Total: <span>${((bookedActivity?.price || 0) + cartItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0)).toFixed(2)}</span>
+                    </div>
+                    <button 
+                      className="result-cart-proceed-btn"
+                      onClick={() => navigate("/cart", { state: { bookingActivity: bookedActivity } })}
+                    >
+                      View Cart
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="result-cart-empty">
+                  <div className="result-cart-empty-icon">🛒</div>
+                  <div className="result-cart-empty-text">
+                    Book an activity or add food/drinks to your cart
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* ── Actions ── */}
             <div className="result-actions">
