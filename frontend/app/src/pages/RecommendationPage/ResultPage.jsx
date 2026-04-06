@@ -1345,6 +1345,11 @@ export default function ResultPage() {
   };
 
   const handleAddToCart = async (itemType, itemName) => {
+    if (!user) {
+      console.warn("Cannot add to cart: User not logged in.");
+      return;
+    }
+
     const itemKey = `${itemType}-${itemName}`;
     setCartLoading((prev) => ({ ...prev, [itemKey]: true }));
 
@@ -1383,6 +1388,19 @@ export default function ResultPage() {
           console.log("Activity unbooked and all food/drink cleared!");
           clearTokenRef.current++;
           setCartLoading((prev) => ({ ...prev, [itemKey]: false }));
+
+          // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
+          try {
+            const res = await apiClient.get("/food-order/all");
+            const allOrders = res.data.orders ?? [];
+            const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+            await Promise.all(
+              foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
+            );
+          } catch (err) {
+            console.warn("Error deleting food/drink orders:", err.message);
+          }
+          setCartItems([]);
           return;
         }
 
@@ -1482,15 +1500,17 @@ export default function ResultPage() {
     try {
       // Handle activity removal
       if (itemType === "activity") {
-        // Delete all food/drink orders from backend
-        await Promise.all(
-          cartItems.map((item) => {
-            if (item.order_id) {
-              return apiClient.delete(`/food-order/${item.order_id}`);
-            }
-            return Promise.resolve();
-          })
-        );
+        // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
+        try {
+          const res = await apiClient.get("/food-order/all");
+          const allOrders = res.data.orders ?? [];
+          const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+          await Promise.all(
+            foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
+          );
+        } catch (err) {
+          console.warn("Error deleting food/drink orders:", err.message);
+        }
 
         sessionStorage.removeItem("bookingActivity");
         setBookedActivity(null);
@@ -1551,15 +1571,17 @@ export default function ResultPage() {
     try {
       // Handle activity removal
       if (itemType === "activity") {
-        // Delete all food/drink orders from backend
-        await Promise.all(
-          cartItems.map((item) => {
-            if (item.order_id) {
-              return apiClient.delete(`/food-order/${item.order_id}`);
-            }
-            return Promise.resolve();
-          })
-        );
+        // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
+        try {
+          const res = await apiClient.get("/food-order/all");
+          const allOrders = res.data.orders ?? [];
+          const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
+          await Promise.all(
+            foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
+          );
+        } catch (err) {
+          console.warn("Error deleting food/drink orders:", err.message);
+        }
 
         sessionStorage.removeItem("bookingActivity");
         setBookedActivity(null);
@@ -1853,6 +1875,7 @@ export default function ResultPage() {
                     const isLoading = cartLoading[itemKey];
                     const itemData = getItemData("activity", item.activity);
                     const isOtherActivityBooked = bookedActivity && bookedActivity.name !== item.activity;
+                    const notLoggedIn = !user;
 
                     return (
                       <div
@@ -1876,22 +1899,20 @@ export default function ResultPage() {
                           </div>
                           <div className="result-item-explanation">{item.explanation}</div>
                           <button
-                            className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${isOtherActivityBooked ? " disabled" : ""}`}
+                            className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${isOtherActivityBooked || notLoggedIn ? " disabled" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!isLoading) {
+                              if (!isLoading && !notLoggedIn) {
                                 if (isAdded) {
-                                  // Unbook this activity
                                   handleAddToCart("activity", item.activity);
                                 } else if (!isOtherActivityBooked) {
-                                  // Book this activity
                                   handleAddToCart("activity", item.activity);
                                 }
                               }
                             }}
-                            disabled={isLoading}
+                            disabled={isLoading || notLoggedIn}
                           >
-                            {isAdded ? "✓" : isOtherActivityBooked ? "🔒 Locked" : isLoading ? "..." : "Book Activity"}
+                            {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : isOtherActivityBooked ? "🔒 Locked" : isLoading ? "..." : "Book Activity"}
                           </button>
                         </div>
                       </div>
@@ -1917,6 +1938,7 @@ export default function ResultPage() {
                           const isLoading = cartLoading[itemKey];
                           const itemData = getItemData("food", item.food);
                           const noActivity = !bookedActivity;
+                          const notLoggedIn = !user;
 
                           return (
                             <div
@@ -1940,28 +1962,22 @@ export default function ResultPage() {
                                   <div className="result-item-price">${itemData.price}</div>
                                 </div>
                                 <div className="result-item-explanation">{item.explanation}</div>
-                                {noActivity && !isAdded ? (
-                                  <div className="result-add-disabled-wrap">
-                                    <span className="result-disabled-tooltip">🔒 Book an activity first</span>
-                                  </div>
-                                ) : (
-                                  <button
-                                    className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity ? " disabled" : ""}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!isLoading && !noActivity) {
-                                        if (isAdded) {
-                                          handleRemoveFromCart("food", item.food);
-                                        } else {
-                                          handleAddToCart("food", item.food);
-                                        }
+                                <button
+                                  className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity || notLoggedIn ? " disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isLoading && !noActivity && !notLoggedIn) {
+                                      if (isAdded) {
+                                        handleRemoveFromCart("food", item.food);
+                                      } else {
+                                        handleAddToCart("food", item.food);
                                       }
-                                    }}
-                                    disabled={isLoading || noActivity}
-                                  >
-                                    {isAdded ? "✓" : isLoading ? "..." : "Add to Cart"}
-                                  </button>
-                                )}
+                                    }
+                                  }}
+                                  disabled={isLoading || noActivity || notLoggedIn}
+                                >
+                                  {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : noActivity ? "🔒 Book an activity first" : isLoading ? "..." : "Add to Cart"}
+                                </button>
                               </div>
                             </div>
                           );
@@ -1980,6 +1996,7 @@ export default function ResultPage() {
                         const isLoading = cartLoading[itemKey];
                         const itemData = getItemData("drink", drinkName);
                         const noActivity = !bookedActivity;
+                        const notLoggedIn = !user;
 
                         return (
                           <div
@@ -2004,28 +2021,22 @@ export default function ResultPage() {
                               <div className="result-item-explanation">
                                 {result.drink_recommendation_details.explanation}
                               </div>
-                              {noActivity && !isAdded ? (
-                                <div className="result-add-disabled-wrap">
-                                  <span className="result-disabled-tooltip">🔒 Book an activity first</span>
-                                </div>
-                              ) : (
-                                <button
-                                  className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity ? " disabled" : ""}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!isLoading && !noActivity) {
-                                      if (isAdded) {
-                                        handleRemoveFromCart("drink", drinkName);
-                                      } else {
-                                        handleAddToCart("drink", drinkName);
-                                      }
+                              <button
+                                className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity || notLoggedIn ? " disabled" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isLoading && !noActivity && !notLoggedIn) {
+                                    if (isAdded) {
+                                      handleRemoveFromCart("drink", drinkName);
+                                    } else {
+                                      handleAddToCart("drink", drinkName);
                                     }
-                                  }}
-                                  disabled={isLoading || noActivity}
-                                >
-                                  {isAdded ? "✓" : isLoading ? "..." : "Add to Cart"}
-                                </button>
-                              )}
+                                  }
+                                }}
+                                disabled={isLoading || noActivity || notLoggedIn}
+                              >
+                                {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : noActivity ? "🔒 Book an activity first" : isLoading ? "..." : "Add to Cart"}
+                              </button>
                             </div>
                           </div>
                         );
