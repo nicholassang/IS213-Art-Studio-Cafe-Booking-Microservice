@@ -5,9 +5,22 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import Layout from "../../components/Layout";
 import apiClient from "../../services/apiClient";
-import { getFirstBookableDate, isFutureDaySlotSelection } from "../../utils/bookingCalendar";
 
 const TWO_HOUR_MS = 2 * 60 * 60 * 1000;
+
+// get the frist date for the booking
+function getFirstBookableDate() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.toISOString().split("T")[0];
+}
+
+function isFutureDaySlotSelection(info, durationMs) {
+  const now = new Date();
+  const start = info.start;
+  const duration = info.end - info.start;
+  return start > now && duration === durationMs;
+}
 
 export default function BookingPage() {
   const location = useLocation();
@@ -25,7 +38,7 @@ export default function BookingPage() {
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  // firstBookableDate
+  
   const firstBookableDate = getFirstBookableDate();
 
   const saveActivity = (activity) => {
@@ -68,6 +81,13 @@ export default function BookingPage() {
   }, []);
 
   const handleSlotSelect = async (info) => {
+    if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
+      setSelectedSlot(null);
+      setSlotAvailability(null);
+      setStatusMessage("Please choose a future time slot.");
+      return;
+    }
+
     saveSlot(info);
     setSlotAvailability(null);
 
@@ -95,8 +115,17 @@ export default function BookingPage() {
     }
   };
 
-  // go to menu without clearing orders
-  const handleAddFood = () => {
+  const handleAddFood = async () => {
+    try {
+      const res = await apiClient.get("/food-order/all");
+      const orders = res.data.orders ?? [];
+      const manualOrders = orders.filter(o => !o.comment?.startsWith("booking:"));
+      for (const order of manualOrders) {
+        await apiClient.delete(`/food-order/${order.order_id}`);
+      }
+    } catch (err) {
+      console.error("Could not clear orders:", err);
+    }
     navigate("/menu", { state: bookingState });
   };
 
@@ -192,7 +221,7 @@ export default function BookingPage() {
                 )}
               </div>
 
-              {/* Booking summary card */}
+              {/* Booking summary */}
               <div className="bp-card">
                 <p className="bp-step-label">Step 3</p>
                 <h2 className="bp-card-title">🧾 Booking Summary</h2>
@@ -219,11 +248,11 @@ export default function BookingPage() {
                   )}
                 </div>
 
-                {/* Two action buttons */}
+                {/* Action buttons */}
                 <div className="bp-btn-row">
                   <button
                     className="bp-btn bp-btn-primary"
-                    onClick={handleAddFood}  // clear old order first
+                    onClick={handleAddFood}
                     disabled={isDisabled}
                   >
                     🍽️ Add Food
@@ -243,10 +272,10 @@ export default function BookingPage() {
             <div className="bp-card">
               <p className="bp-step-label">Step 2</p>
               <h2 className="bp-card-title">🕐 Select Time Slot</h2>
-              <p className="bp-sub-hint">Choose a 2-hour slot from tomorrow onward.</p>
+              <p className="bp-sub-hint">Choose a 2-hour slot from today onward.</p>
 
               <div className="bp-chip-row">
-                {["2-hour sessions", "From tomorrow onward", "8AM–8PM", "Limited slots"].map(item => (
+                {["2-hour sessions", "From today onward", "8AM–8PM", "Limited slots"].map(item => (
                   <span key={item} className="bp-chip">{item}</span>
                 ))}
               </div>
@@ -257,8 +286,8 @@ export default function BookingPage() {
                     plugins={[timeGridPlugin, interactionPlugin]}
                     locale="en-gb"
                     timeZone="Asia/Singapore"
-                    titleFormat={{ year: 'numeric', month: 'short', day: 'numeric' }} 
-                    dayHeaderFormat={{ weekday: 'short', day: 'numeric', month: 'short' }}
+                    titleFormat={{ year: "numeric", month: "short", day: "numeric" }}
+                    dayHeaderFormat={{ weekday: "short", day: "numeric", month: "short" }}
                     initialView="timeGridWeek"
                     allDaySlot={false}
                     slotMinTime="08:00:00"
@@ -290,6 +319,7 @@ export default function BookingPage() {
     </>
   );
 }
+
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -386,23 +416,37 @@ const styles = `
   .bp-activity-info p { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
 
   .bp-activity-pick-btn {
-    padding: 8px 16px; border-radius: 999px;
-    border: 1.5px solid var(--line); background: var(--surface-2);
-    color: var(--text); cursor: pointer; font-size: 0.85rem;
-    font-family: 'DM Sans', sans-serif; font-weight: 500; transition: all 0.2s ease;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    transition: all 0.2s ease;
   }
   .bp-activity-pick-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
 
   .bp-status {
-    padding: 14px 18px; border-radius: 12px;
-    background: #f8f2e8; border: 1px solid var(--line);
-    font-size: 0.93rem; color: var(--text); margin-bottom: 20px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: #f8f2e8;
+    border: 1px solid var(--line);
+    font-size: 0.93rem;
+    color: var(--text);
+    margin-bottom: 20px;
   }
 
   .bp-slot-info {
-    margin-top: 20px; padding: 18px 20px;
-    border-radius: 14px; background: var(--surface-2);
-    border: 1px solid var(--line); font-size: 0.93rem; line-height: 1.7;
+    margin-top: 20px;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: 0.93rem;
+    line-height: 1.7;
   }
   .bp-slot-info p { margin: 0 0 6px; }
   .bp-slot-info p:last-child { margin: 0; }
@@ -425,9 +469,12 @@ const styles = `
   }
 
   .bp-step-label {
-    font-size: 0.78rem; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--accent-deep);
-    font-weight: 700; margin: 0 0 8px;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-deep);
+    font-weight: 700;
+    margin: 0 0 8px;
   }
 
   .bp-sub-hint { color: var(--muted); margin-top: 0; margin-bottom: 16px; font-size: 0.94rem; }
@@ -435,14 +482,20 @@ const styles = `
   .bp-chip-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 
   .bp-chip {
-    padding: 8px 12px; border-radius: 999px;
-    background: #f4ece1; border: 1px solid var(--line);
-    font-size: 0.82rem; color: #7a664d; font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #f4ece1;
+    border: 1px solid var(--line);
+    font-size: 0.82rem;
+    color: #7a664d;
+    font-weight: 600;
   }
 
   .bp-cal-shell {
-    background: #fcf8f2; border: 1px solid #efe3d3;
-    border-radius: 20px; padding: 16px;
+    background: #fcf8f2;
+    border: 1px solid #efe3d3;
+    border-radius: 20px;
+    padding: 16px;
   }
 
   .bp-cal-wrap .fc { font-family: 'DM Sans', sans-serif !important; color: var(--text) !important; }
@@ -457,6 +510,9 @@ const styles = `
   .bp-cal-wrap .fc-scrollgrid td, .bp-cal-wrap .fc-scrollgrid th { border-color: var(--line) !important; }
   .bp-cal-wrap .fc-highlight { background: rgba(200, 169, 126, 0.2) !important; }
   .bp-cal-wrap .fc-event { border-radius: 8px !important; font-size: 0.82rem !important; font-weight: 600 !important; }
+  .bp-cal-wrap .fc .fc-day-past { background: #f3f3f3 !important; }
+  .bp-cal-wrap .fc .fc-timegrid-col.fc-day-past { background: #f3f3f3 !important; cursor: not-allowed; }
+  .bp-cal-wrap .fc .fc-day-past .fc-col-header-cell-cushion { color: #b0b0b0 !important; }
 
   .bp-btn-row { display: flex; gap: 12px; margin-top: 20px; }
 
@@ -481,3 +537,4 @@ const styles = `
     .bp-booking-sidebar { position: static; }
   }
 `;
+
