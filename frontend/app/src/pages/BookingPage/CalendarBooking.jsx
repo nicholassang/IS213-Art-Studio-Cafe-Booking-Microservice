@@ -21,6 +21,24 @@ function isFutureDaySlotSelection(info, durationMs) {
   return start > now && duration === durationMs;
 }
 
+function formatCalendarSlotDate(date) {
+  return new Date(date).toLocaleDateString("en-GB", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatCalendarSlotTime(date) {
+  return new Date(date).toLocaleTimeString("en-GB", {
+    timeZone: "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function BookingPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -39,7 +57,6 @@ export default function BookingPage() {
 
   const firstBookableDate = getFirstBookableDate();
 
-  // Clears session
   const saveActivity = (activity) => {
     setSelectedActivity(activity);
     sessionStorage.removeItem("bookingActivity");
@@ -49,10 +66,13 @@ export default function BookingPage() {
   const saveSlot = (info) => {
     setSelectedSlot(info);
     if (info) {
-      sessionStorage.setItem("bookingSlot", JSON.stringify({
-        start: info.start.toISOString(),
-        end: info.end.toISOString(),
-      }));
+      sessionStorage.setItem(
+        "bookingSlot",
+        JSON.stringify({
+          start: info.start.toISOString(),
+          end: info.end.toISOString(),
+        })
+      );
     } else {
       sessionStorage.removeItem("bookingSlot");
     }
@@ -64,8 +84,9 @@ export default function BookingPage() {
         const res = await apiClient.get("/activities");
         const activityList = res.data.activities || [];
         setActivities(activityList);
+
         if (passedActivity?.id) {
-          const matched = activityList.find(item => item.id === passedActivity.id);
+          const matched = activityList.find((item) => item.id === passedActivity.id);
           if (matched) saveActivity(matched);
         }
       } catch (error) {
@@ -73,6 +94,7 @@ export default function BookingPage() {
         setStatusMessage("Could not load activities.");
       }
     };
+
     fetchActivities();
   }, []);
 
@@ -105,15 +127,18 @@ export default function BookingPage() {
           activity_id: selectedActivity.id,
         },
       });
+
       setSlotAvailability(res.data);
 
-      // Only when slot is confirmed available
       if (!res.data.is_full) {
         sessionStorage.setItem("bookingActivity", JSON.stringify(selectedActivity));
-        sessionStorage.setItem("bookingSlot", JSON.stringify({
-          start: info.start.toISOString(),
-          end: info.end.toISOString(),
-        }));
+        sessionStorage.setItem(
+          "bookingSlot",
+          JSON.stringify({
+            start: info.start.toISOString(),
+            end: info.end.toISOString(),
+          })
+        );
       } else {
         sessionStorage.removeItem("bookingActivity");
         sessionStorage.removeItem("bookingSlot");
@@ -131,22 +156,26 @@ export default function BookingPage() {
     try {
       const res = await apiClient.get("/food-order/all");
       const orders = res.data.orders ?? [];
-      const manualOrders = orders.filter(o => !o.comment?.startsWith("booking:"));
+      const manualOrders = orders.filter((o) => !o.comment?.startsWith("booking:"));
+
       for (const order of manualOrders) {
         await apiClient.delete(`/food-order/${order.order_id}`);
       }
     } catch (err) {
       console.error("Could not clear orders:", err);
     }
+
     navigate("/menu", { state: bookingState });
   };
 
   const bookingState = {
     bookingActivity: selectedActivity,
-    bookingSlot: selectedSlot ? {
-      start: selectedSlot.start.toISOString(),
-      end: selectedSlot.end.toISOString(),
-    } : null,
+    bookingSlot: selectedSlot
+      ? {
+          start: selectedSlot.start.toISOString(),
+          end: selectedSlot.end.toISOString(),
+        }
+      : null,
   };
 
   const isDisabled = !selectedSlot || !selectedActivity || slotAvailability?.is_full;
@@ -156,27 +185,29 @@ export default function BookingPage() {
       <style>{styles}</style>
       <Layout>
         <div className="bp-root">
-
-          {/* Back buttons */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap" }}>
             {cameFromRecommendation && (
               <button className="bp-back-btn" onClick={() => navigate(-1)}>
                 ← Back
               </button>
             )}
+
             {!cameFromRecommendation && (
               <button className="bp-back-btn" onClick={() => navigate("/activities")}>
                 ← Back to Activities
               </button>
             )}
+
             {selectedActivity?.id && (
-              <button className="bp-back-btn" onClick={() => navigate(`/activity/${selectedActivity.id}`)}>
+              <button
+                className="bp-back-btn"
+                onClick={() => navigate(`/activity/${selectedActivity.id}`)}
+              >
                 View Activity Details
               </button>
             )}
           </div>
 
-          {/* Hero */}
           <section className="bp-hero">
             <span className="bp-eyebrow">Booking — Select Your Time</span>
             <h1 className="bp-title">Book Your Activity 🗓️</h1>
@@ -188,11 +219,7 @@ export default function BookingPage() {
           {statusMessage && <div className="bp-status">{statusMessage}</div>}
 
           <div className="bp-booking-grid">
-
-            {/* Sidebar */}
             <div className="bp-booking-sidebar">
-
-              {/* Activity card */}
               <div className="bp-card">
                 <p className="bp-step-label">Step 1</p>
                 <h2 className="bp-card-title">🎨 Selected Activity</h2>
@@ -207,7 +234,9 @@ export default function BookingPage() {
                     <div className="bp-activity-info">
                       <h3>{selectedActivity.name}</h3>
                       <p>{selectedActivity.category}</p>
-                      <p>{selectedActivity.duration} • {selectedActivity.level}</p>
+                      <p>
+                        {selectedActivity.duration} • {selectedActivity.level}
+                      </p>
                       <p style={{ color: "var(--accent-deep)", fontWeight: 600 }}>
                         ${selectedActivity.price} / person
                       </p>
@@ -219,7 +248,7 @@ export default function BookingPage() {
                       Choose an experience first to unlock available time slots.
                     </p>
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                      {activities.map(activity => (
+                      {activities.map((activity) => (
                         <button
                           key={activity.id}
                           className="bp-activity-pick-btn"
@@ -233,24 +262,28 @@ export default function BookingPage() {
                 )}
               </div>
 
-              {/* Booking summary */}
               <div className="bp-card">
                 <p className="bp-step-label">Step 3</p>
                 <h2 className="bp-card-title">🧾 Booking Summary</h2>
 
                 <div className="bp-slot-info" style={{ marginTop: 0 }}>
-                  <p><strong>Activity:</strong> {selectedActivity?.name || "Not selected"}</p>
+                  <p>
+                    <strong>Activity:</strong> {selectedActivity?.name || "Not selected"}
+                  </p>
                   <p>
                     <strong>Slot:</strong>{" "}
                     {selectedSlot
-                      ? `${selectedSlot.start.toLocaleString()} — ${selectedSlot.end.toLocaleTimeString()}`
+                      ? `${formatCalendarSlotDate(selectedSlot.start)}, ${formatCalendarSlotTime(selectedSlot.start)} — ${formatCalendarSlotTime(selectedSlot.end)}`
                       : "Choose a slot"}
                   </p>
-                  <p><strong>Duration:</strong> 2 hours</p>
+                  <p>
+                    <strong>Duration:</strong> 2 hours
+                  </p>
 
                   {loadingAvailability && (
                     <p style={{ color: "var(--muted)" }}>Checking availability…</p>
                   )}
+
                   {!loadingAvailability && slotAvailability && (
                     <p className={slotAvailability.is_full ? "bp-slot-full" : "bp-slot-open"}>
                       {slotAvailability.is_full
@@ -260,7 +293,6 @@ export default function BookingPage() {
                   )}
                 </div>
 
-                {/* Action buttons */}
                 <div className="bp-btn-row">
                   <button
                     className="bp-btn bp-btn-primary"
@@ -280,16 +312,19 @@ export default function BookingPage() {
               </div>
             </div>
 
-            {/* Calendar */}
             <div className="bp-card">
               <p className="bp-step-label">Step 2</p>
               <h2 className="bp-card-title">🕐 Select Time Slot</h2>
               <p className="bp-sub-hint">Choose a 2-hour slot from today onward.</p>
 
               <div className="bp-chip-row">
-                {["2-hour sessions", "From today onward", "8AM–8PM", "Limited slots"].map(item => (
-                  <span key={item} className="bp-chip">{item}</span>
-                ))}
+                {["2-hour sessions", "From today onward", "8AM–8PM", "Limited slots"].map(
+                  (item) => (
+                    <span key={item} className="bp-chip">
+                      {item}
+                    </span>
+                  )
+                )}
               </div>
 
               <div className="bp-cal-shell">
@@ -312,14 +347,20 @@ export default function BookingPage() {
                     validRange={{ start: firstBookableDate }}
                     select={handleSlotSelect}
                     selectAllow={(info) => isFutureDaySlotSelection(info, TWO_HOUR_MS)}
-                    events={selectedSlot ? [{
-                      title: "Your slot",
-                      start: selectedSlot.start,
-                      end: selectedSlot.end,
-                      backgroundColor: "#c8a97e",
-                      borderColor: "#b38d5e",
-                      textColor: "#fff",
-                    }] : []}
+                    events={
+                      selectedSlot
+                        ? [
+                            {
+                              title: "Your slot",
+                              start: selectedSlot.start,
+                              end: selectedSlot.end,
+                              backgroundColor: "#c8a97e",
+                              borderColor: "#b38d5e",
+                              textColor: "#fff",
+                            },
+                          ]
+                        : []
+                    }
                     height="auto"
                   />
                 </div>
@@ -548,4 +589,3 @@ const styles = `
     .bp-booking-sidebar { position: static; }
   }
 `;
-
