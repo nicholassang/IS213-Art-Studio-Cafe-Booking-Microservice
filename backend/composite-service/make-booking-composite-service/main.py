@@ -52,6 +52,23 @@ class FoodItem(BaseModel):
     comment: Optional[str] = ""
 
 
+class FoodOrderRequest(BaseModel):
+    menu_item_id: int
+    name: str
+    price: float
+    quantity: int = 1
+    comment: Optional[str] = ""
+    image_url: Optional[str] = ""
+
+
+class FoodOnlyPaymentRequest(BaseModel):
+    user_name: str
+    user_email: str
+    food_items: List[FoodOrderRequest]
+    payment_method: str = "card"
+    voucher_code: Optional[str] = ""
+
+
 class BookingRequest(BaseModel):
     user_name: str
     user_email: str
@@ -292,6 +309,77 @@ async def cancel_booking(booking_id: int, payload: CancelBookingRequest):
             "booking": cancelled_booking.get("booking"),
             "status": "cancelled",
             "message": "Booking cancelled and refund processed successfully",
+        }
+
+
+@app.post("/food-only-payment")
+async def create_food_only_payment(payload: FoodOnlyPaymentRequest):
+    """Process payment for food orders only (no activity booking)"""
+    async with httpx.AsyncClient() as client:
+        total_amount = 0.0
+
+        # Process each food item
+        food_order_responses = []
+        for item in payload.food_items:
+            menu_resp = await client.get(f"{MENU_URL}/menu/{item.menu_item_id}")
+            if menu_resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Menu item {item.menu_item_id} not found")
+
+            menu_item = menu_resp.json()
+            item_total = float(menu_item.get("price", 0)) * item.quantity
+            total_amount += item_total
+
+            order_payload = {
+                "menu_item_id": item.menu_item_id,
+                "name": menu_item.get("name"),
+                "price": float(menu_item.get("price", 0)),
+                "quantity": item.quantity,
+                "comment": item.comment or "Food-only order",
+                "image_url": menu_item.get("image_url", ""),
+            }
+
+            food_resp = await client.post(f"{FOOD_ORDER_URL}/food-order", json=order_payload)
+            if food_resp.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Failed to create food order for {menu_item.get('name')}")
+
+            food_order_responses.append(food_resp.json().get("order"))
+
+        # Process payment
+        payment_resp = await client.post(
+            f"{PAYMENT_URL}/payment/process",
+            json={
+                "Amount": to_minor_units(total_amount),
+                "Currency": PAYMENT_CURRENCY,
+                "PaymentMethod": normalize_payment_method(payload.payment_method),
+                "VoucherCode": payload.voucher_code or "",
+            },
+        )
+
+        if payment_resp.status_code != 200:
+            payment_error = None
+            try:
+                payment_error = payment_resp.json()
+            except ValueError:
+                payment_error = payment_resp.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Payment service failed",
+                    "downstream_status": payment_resp.status_code,
+                    "downstream_response": payment_error,
+                },
+            )
+
+        payment = payment_resp.json()
+        final_amount = payment.get("FinalAmount", to_minor_units(total_amount)) / 100
+
+        return {
+            "success": True,
+            "food_orders": food_order_responses,
+            "payment": payment,
+            "total_amount": final_amount,
+            "message": "Food order payment successful",
         }
 
 

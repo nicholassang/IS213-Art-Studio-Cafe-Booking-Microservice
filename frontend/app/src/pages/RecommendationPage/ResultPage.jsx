@@ -1379,45 +1379,16 @@ export default function ResultPage() {
       if (itemType === "activity") {
         // If this activity is already booked, unbook it
         if (addedItems[itemKey]) {
-          // Delete all food/drink orders from backend
-          await Promise.all(
-            cartItems.map((item) => {
-              if (item.order_id) {
-                return apiClient.delete(`/food-order/${item.order_id}`);
-              }
-              return Promise.resolve();
-            })
-          );
-
           sessionStorage.removeItem("bookingActivity");
           setBookedActivity(null);
-          setCartItems([]);
           setAddedItems((prev) => {
             const next = { ...prev };
-            Object.keys(next).forEach((key) => {
-              if (key.startsWith("food-") || key.startsWith("drink-")) {
-                next[key] = false;
-              }
-            });
             next[itemKey] = false;
             return next;
           });
-          console.log("Activity unbooked and all food/drink cleared!");
+          console.log("Activity unbooked!");
           clearTokenRef.current++;
           setCartLoading((prev) => ({ ...prev, [itemKey]: false }));
-
-          // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
-          try {
-            const res = await apiClient.get("/food-order/all");
-            const allOrders = res.data.orders ?? [];
-            const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
-            await Promise.all(
-              foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
-            );
-          } catch (err) {
-            console.warn("Error deleting food/drink orders:", err.message);
-          }
-          setCartItems([]);
           return;
         }
 
@@ -1456,13 +1427,7 @@ export default function ResultPage() {
           console.warn("Activity not found in database:", itemName, "Available:", activitiesData.map(a => a.name));
         }
       } else {
-        // Only allow food/drink if an activity is booked
-        if (!bookedActivity) {
-          console.warn("Cannot add food/drink: No activity booked yet.");
-          setCartLoading((prev) => ({ ...prev, [itemKey]: false }));
-          return;
-        }
-
+        // Food/drink order - no longer requires activity booking
         const menuItem = menuData.find(m =>
           m.name.toLowerCase().trim() === itemName.toLowerCase().trim() ||
           m.name.toLowerCase().includes(itemName.toLowerCase()) ||
@@ -1517,33 +1482,14 @@ export default function ResultPage() {
     try {
       // Handle activity removal
       if (itemType === "activity") {
-        // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
-        try {
-          const res = await apiClient.get("/food-order/all");
-          const allOrders = res.data.orders ?? [];
-          const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
-          await Promise.all(
-            foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
-          );
-        } catch (err) {
-          console.warn("Error deleting food/drink orders:", err.message);
-        }
-
         sessionStorage.removeItem("bookingActivity");
         setBookedActivity(null);
-        setCartItems([]);
         setAddedItems((prev) => {
           const next = { ...prev };
-          // Reset all food and drink added states
-          Object.keys(next).forEach((key) => {
-            if (key.startsWith("food-") || key.startsWith("drink-")) {
-              next[key] = false;
-            }
-          });
           next[itemKey] = false;
           return next;
         });
-        console.log("Activity and all food/drink removed from cart");
+        console.log("Activity removed from cart");
         clearTokenRef.current++;
       } else {
         // Handle food/drink removal - find item by name (case-insensitive)
@@ -1588,32 +1534,14 @@ export default function ResultPage() {
     try {
       // Handle activity removal
       if (itemType === "activity") {
-        // Delete all food/drink orders from backend - fetch actual orders first for accurate order_ids
-        try {
-          const res = await apiClient.get("/food-order/all");
-          const allOrders = res.data.orders ?? [];
-          const foodDrinkOrders = allOrders.filter(o => !o.comment?.startsWith("booking:"));
-          await Promise.all(
-            foodDrinkOrders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
-          );
-        } catch (err) {
-          console.warn("Error deleting food/drink orders:", err.message);
-        }
-
         sessionStorage.removeItem("bookingActivity");
         setBookedActivity(null);
-        setCartItems([]);
         setAddedItems((prev) => {
           const next = { ...prev };
-          Object.keys(next).forEach((key) => {
-            if (key.startsWith("food-") || key.startsWith("drink-")) {
-              next[key] = false;
-            }
-          });
           next[itemKey] = false;
           return next;
         });
-        console.log("Activity and all food/drink removed from cart");
+        console.log("Activity removed from cart");
         clearTokenRef.current++;
       } else {
         // Handle food/drink removal - remove ALL instances by name
@@ -1955,7 +1883,6 @@ export default function ResultPage() {
                           const isAdded = addedItems[itemKey] || isInCart;
                           const isLoading = cartLoading[itemKey];
                           const itemData = getItemData("food", item.food);
-                          const noActivity = !bookedActivity;
                           const notLoggedIn = !user;
 
                           return (
@@ -1981,10 +1908,10 @@ export default function ResultPage() {
                                 </div>
                                 <div className="result-item-explanation">{item.explanation}</div>
                                 <button
-                                  className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity || notLoggedIn ? " disabled" : ""}`}
+                                  className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${notLoggedIn ? " disabled" : ""}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (!isLoading && !noActivity && !notLoggedIn) {
+                                    if (!isLoading && !notLoggedIn) {
                                       if (isAdded) {
                                         handleRemoveFromCart("food", item.food);
                                       } else {
@@ -1992,9 +1919,9 @@ export default function ResultPage() {
                                       }
                                     }
                                   }}
-                                  disabled={isLoading || noActivity || notLoggedIn}
+                                  disabled={isLoading || notLoggedIn}
                                 >
-                                  {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : noActivity ? "🔒 Book an activity first" : isLoading ? "..." : "Add to Cart"}
+                                  {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : isLoading ? "..." : "Add to Cart"}
                                 </button>
                               </div>
                             </div>
@@ -2013,7 +1940,6 @@ export default function ResultPage() {
                         const isAdded = addedItems[itemKey] || isInCart;
                         const isLoading = cartLoading[itemKey];
                         const itemData = getItemData("drink", drinkName);
-                        const noActivity = !bookedActivity;
                         const notLoggedIn = !user;
 
                         return (
@@ -2040,10 +1966,10 @@ export default function ResultPage() {
                                 {result.drink_recommendation_details.explanation}
                               </div>
                               <button
-                                className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${noActivity || notLoggedIn ? " disabled" : ""}`}
+                                className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${notLoggedIn ? " disabled" : ""}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (!isLoading && !noActivity && !notLoggedIn) {
+                                  if (!isLoading && !notLoggedIn) {
                                     if (isAdded) {
                                       handleRemoveFromCart("drink", drinkName);
                                     } else {
@@ -2051,9 +1977,9 @@ export default function ResultPage() {
                                     }
                                   }
                                 }}
-                                disabled={isLoading || noActivity || notLoggedIn}
+                                disabled={isLoading || notLoggedIn}
                               >
-                                {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : noActivity ? "🔒 Book an activity first" : isLoading ? "..." : "Add to Cart"}
+                                {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : isLoading ? "..." : "Add to Cart"}
                               </button>
                             </div>
                           </div>

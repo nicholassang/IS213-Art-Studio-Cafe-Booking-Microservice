@@ -310,8 +310,6 @@ export default function FoodDetail() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  const hasActivity = !!JSON.parse(sessionStorage.getItem("bookingActivity") || "null");
-
   useEffect(() => {
     apiClient.get(`/menu/name/${id}`)
       .then(res => setItem(res.data))
@@ -319,10 +317,6 @@ export default function FoodDetail() {
   }, [id]);
 
   const handleAddToOrder = async () => {
-    if (!hasActivity) {
-      setError("Please book an activity before adding food to your order.");
-      return;
-    }
     setError("");
     setLoading(true);
     try {
@@ -408,18 +402,15 @@ export default function FoodDetail() {
               </p>
 
               {/* Add to Order */}
-              {!hasActivity && (
-                <p className="detail-error-msg">⚠️ You need to book an activity before adding food.</p>
-              )}
               {error && (
                 <p className="detail-error-msg">{error}</p>
               )}
               <button
                 className="detail-add-btn"
                 onClick={handleAddToOrder}
-                disabled={loading || success || !hasActivity}
+                disabled={loading || success}
               >
-                {success ? "✓ Added!" : loading ? "Adding…" : !hasActivity ? "Book an Activity First" : `Add to Order — $${(item.price * quantity).toFixed(2)}`}
+                {success ? "✓ Added!" : loading ? "Adding…" : `Add to Order — $${(item.price * quantity).toFixed(2)}`}
               </button>
             </div>
           </div>
