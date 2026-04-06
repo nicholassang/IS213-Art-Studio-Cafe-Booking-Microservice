@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from models import OrderItem, QuantityUpdate
+from models import OrderItem, QuantityUpdate, CommentUpdate
 from dotenv import load_dotenv
 from psycopg import connect
 from psycopg.rows import dict_row
@@ -147,6 +147,16 @@ async def update_quantity(order_id: int, body: QuantityUpdate):
         f"UPDATE food_orders SET quantity = %s, total = %s WHERE order_id = %s RETURNING {ORDER_COLUMNS}",
         (body.quantity, new_total, order_id),
     )
+    return {"success": True, "order": order}
+
+@app.put("/food-order/{order_id}/comment")
+async def update_comment(order_id: int, body: CommentUpdate):
+    order = execute_write(
+        f"UPDATE food_orders SET comment = %s WHERE order_id = %s RETURNING {ORDER_COLUMNS}",
+        (body.comment or "", order_id),
+    )
+    if not order:
+        return {"success": False, "message": "Order not found"}
     return {"success": True, "order": order}
 
 @app.delete("/food-order/{order_id}")

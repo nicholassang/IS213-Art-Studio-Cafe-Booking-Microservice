@@ -56,7 +56,7 @@ export default function Cart() {
   };
 
   const handleUpdateComment = async (order_id) => {
-    await apiClient.put(`/food-order/${order_id}`, { comment: editingComment });
+    await apiClient.put(`/food-order/${order_id}/comment`, { comment: editingComment });
     setOrders((prev) =>
       prev.map((o) => (o.order_id === order_id ? { ...o, comment: editingComment } : o))
     );

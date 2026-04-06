@@ -486,6 +486,14 @@ async def update_food_order_quantity(order_id: int, request: Request):
     return res.json()
 
 
+@app.put("/food-order/{order_id}/comment")
+async def update_food_order_comment(order_id: int, request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        res = await client.put(f"{FOOD_ORDER_URL}/food-order/{order_id}/comment", json=body)
+    return res.json()
+
+
 @app.delete("/food-order/{order_id}")
 async def delete_food_order(order_id: int):
     async with httpx.AsyncClient() as client:
