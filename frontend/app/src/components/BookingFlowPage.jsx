@@ -197,14 +197,14 @@ export default function BookingPage() {
     if (!start || !end) return "Not selected";
 
     const dateOptions = {
-      timeZone: "Asia/Singapore",
+      timeZone: "UTC",
       day: "numeric",
       month: "short",
       year: "numeric",
     };
 
     const timeOptions = {
-      timeZone: "Asia/Singapore",
+      timeZone: "UTC",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

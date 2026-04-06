@@ -20,11 +20,27 @@ export default function Cart() {
   );
 
   useEffect(() => {
-    if (bookingActivity)
+    if (location.state?.bookingActivity !== undefined) {
+      setBookingActivity(location.state.bookingActivity);
+    }
+    if (location.state?.bookingSlot !== undefined) {
+      setBookingSlot(location.state.bookingSlot);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    if (bookingActivity) {
       sessionStorage.setItem("bookingActivity", JSON.stringify(bookingActivity));
-    if (bookingSlot)
+    } else {
+      sessionStorage.removeItem("bookingActivity");
+    }
+
+    if (bookingSlot) {
       sessionStorage.setItem("bookingSlot", JSON.stringify(bookingSlot));
-  }, []);
+    } else {
+      sessionStorage.removeItem("bookingSlot");
+    }
+  }, [bookingActivity, bookingSlot]);
 
   const foodTotal = orders.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const activityPrice = bookingActivity?.price || 0;
