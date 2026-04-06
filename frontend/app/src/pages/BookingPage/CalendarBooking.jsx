@@ -8,7 +8,6 @@ import apiClient from "../../services/apiClient";
 
 const TWO_HOUR_MS = 2 * 60 * 60 * 1000;
 
-// get the frist date for the booking
 function getFirstBookableDate() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -38,16 +37,13 @@ export default function BookingPage() {
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  
   const firstBookableDate = getFirstBookableDate();
 
+  // Clears session
   const saveActivity = (activity) => {
     setSelectedActivity(activity);
-    if (activity) {
-      sessionStorage.setItem("bookingActivity", JSON.stringify(activity));
-    } else {
-      sessionStorage.removeItem("bookingActivity");
-    }
+    sessionStorage.removeItem("bookingActivity");
+    sessionStorage.removeItem("bookingSlot");
   };
 
   const saveSlot = (info) => {
@@ -84,6 +80,8 @@ export default function BookingPage() {
     if (!isFutureDaySlotSelection(info, TWO_HOUR_MS)) {
       setSelectedSlot(null);
       setSlotAvailability(null);
+      sessionStorage.removeItem("bookingActivity");
+      sessionStorage.removeItem("bookingSlot");
       setStatusMessage("Please choose a future time slot.");
       return;
     }
@@ -108,8 +106,22 @@ export default function BookingPage() {
         },
       });
       setSlotAvailability(res.data);
+
+      // Only when slot is confirmed available
+      if (!res.data.is_full) {
+        sessionStorage.setItem("bookingActivity", JSON.stringify(selectedActivity));
+        sessionStorage.setItem("bookingSlot", JSON.stringify({
+          start: info.start.toISOString(),
+          end: info.end.toISOString(),
+        }));
+      } else {
+        sessionStorage.removeItem("bookingActivity");
+        sessionStorage.removeItem("bookingSlot");
+      }
     } catch (error) {
       setStatusMessage("Could not load slot availability.");
+      sessionStorage.removeItem("bookingActivity");
+      sessionStorage.removeItem("bookingSlot");
     } finally {
       setLoadingAvailability(false);
     }
@@ -319,7 +331,6 @@ export default function BookingPage() {
     </>
   );
 }
-
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
