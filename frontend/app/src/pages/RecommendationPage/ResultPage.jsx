@@ -1157,6 +1157,16 @@ export default function ResultPage() {
   }, []);
 
   useEffect(() => {
+    // If user is not logged in, clear all cart state
+    if (!user) {
+      setCartItems([]);
+      setAddedItems({});
+      setBookedActivity(null);
+      sessionStorage.removeItem("bookingActivity");
+      clearTokenRef.current++;
+      return;
+    }
+
     let cancelled = false;
 
     const fetchCartItems = async () => {
@@ -1227,8 +1237,12 @@ export default function ResultPage() {
     // Refresh cart every 5 seconds to catch changes from other pages
     const intervalId = setInterval(fetchCartItems, 5000);
 
-    return () => clearInterval(intervalId);
-  }, []);
+    return () => {
+      clearInterval(intervalId);
+      setCartItems([]);
+      setAddedItems({});
+    };
+  }, [user]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1450,7 +1464,7 @@ export default function ResultPage() {
             price: itemData.price,
             image_url: itemData.image_url,
             quantity: 1,
-            comment: `Added from quiz recommendation (${itemData.type})`,
+            comment: "",
           };
 
           console.log("Adding to cart:", payload);
@@ -1602,7 +1616,7 @@ export default function ResultPage() {
           price: itemData.price,
           image_url: itemData.image_url,
           quantity: 1,
-          comment: `Added from quiz recommendation (${itemType})`,
+          comment: "",
         };
 
         const res = await apiClient.post("/food-order", payload);
@@ -1659,7 +1673,7 @@ export default function ResultPage() {
 
   const handleAddMultipleToCart = async (items) => {
     setCartLoading({});
-    
+
     try {
       for (const item of items) {
         await apiClient.post("/food-order", {
@@ -1667,7 +1681,7 @@ export default function ResultPage() {
           price: 0,
           image_url: "",
           quantity: 1,
-          comment: `Added from quiz recommendation (${item.type})`,
+          comment: "",
         });
       }
       
@@ -2006,6 +2020,7 @@ export default function ResultPage() {
             )}
 
             {/* ── Cart Summary ── */}
+            {user && (
             <div className="result-cart-summary">
               <div className="result-cart-header">
                 <div className="result-cart-title">
@@ -2131,6 +2146,7 @@ export default function ResultPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* ── Actions ── */}
             <div className="result-actions">
