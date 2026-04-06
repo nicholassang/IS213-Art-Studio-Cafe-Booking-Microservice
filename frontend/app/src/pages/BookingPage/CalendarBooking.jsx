@@ -14,6 +14,7 @@ export default function BookingPage() {
   const navigate = useNavigate();
 
   const passedActivity = location.state?.activity || null;
+  const cameFromRecommendation = !!passedActivity;
 
   const [activities, setActivities] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState(
@@ -94,18 +95,8 @@ export default function BookingPage() {
     }
   };
 
-  // clear manual food orders before going to menu
-  const handleAddFood = async () => {
-    try {
-      const res = await apiClient.get("/food-order/all");
-      const orders = res.data.orders ?? [];
-      const manualOrders = orders.filter(o => !o.comment?.startsWith("booking:"));
-      for (const order of manualOrders) {
-        await apiClient.delete(`/food-order/${order.order_id}`);
-      }
-    } catch (err) {
-      console.error("Could not clear orders:", err);
-    }
+  // go to menu without clearing orders
+  const handleAddFood = () => {
     navigate("/menu", { state: bookingState });
   };
 
@@ -127,9 +118,16 @@ export default function BookingPage() {
 
           {/* Back buttons */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap" }}>
-            <button className="bp-back-btn" onClick={() => navigate("/activities")}>
-              ← Back to Activities
-            </button>
+            {cameFromRecommendation && (
+              <button className="bp-back-btn" onClick={() => navigate(-1)}>
+                ← Back
+              </button>
+            )}
+            {!cameFromRecommendation && (
+              <button className="bp-back-btn" onClick={() => navigate("/activities")}>
+                ← Back to Activities
+              </button>
+            )}
             {selectedActivity?.id && (
               <button className="bp-back-btn" onClick={() => navigate(`/activity/${selectedActivity.id}`)}>
                 View Activity Details

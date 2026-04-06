@@ -1845,20 +1845,29 @@ export default function ResultPage() {
                           </div>
                           <div className="result-item-explanation">{item.explanation}</div>
                           <button
-                            className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isLoading ? " loading" : ""}${isOtherActivityBooked || notLoggedIn ? " disabled" : ""}`}
+                            className={`result-add-to-cart-btn${isAdded ? " added" : ""}${isOtherActivityBooked || notLoggedIn ? " disabled" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!isLoading && !notLoggedIn) {
+                              if (!notLoggedIn && !isOtherActivityBooked) {
                                 if (isAdded) {
-                                  handleAddToCart("activity", item.activity);
-                                } else if (!isOtherActivityBooked) {
-                                  handleAddToCart("activity", item.activity);
+                                  // Remove the booking
+                                  handleRemoveFromCart("activity", item.activity);
+                                } else {
+                                  // Navigate to booking page with this activity
+                                  const activity = activitiesData.find(a =>
+                                    a.name.toLowerCase().trim() === item.activity.toLowerCase().trim() ||
+                                    a.name.toLowerCase().includes(item.activity.toLowerCase()) ||
+                                    item.activity.toLowerCase().includes(a.name.toLowerCase())
+                                  );
+                                  if (activity) {
+                                    navigate("/booking", { state: { activity } });
+                                  }
                                 }
                               }
                             }}
-                            disabled={isLoading || notLoggedIn}
+                            disabled={notLoggedIn}
                           >
-                            {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : isOtherActivityBooked ? "🔒 Locked" : isLoading ? "..." : "Book Activity"}
+                            {isAdded ? "✓" : notLoggedIn ? "🔒 Login Required" : isOtherActivityBooked ? "🔒 Locked" : "Choose Time Slot"}
                           </button>
                         </div>
                       </div>

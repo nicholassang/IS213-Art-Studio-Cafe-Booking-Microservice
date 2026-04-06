@@ -138,12 +138,8 @@ export default function Cart() {
                     <button
                       className="cart-booking-edit-btn cart-booking-remove-btn"
                       onClick={async () => {
-                        await Promise.all(
-                          orders.map((o) => apiClient.delete(`/food-order/${o.order_id}`))
-                        );
                         sessionStorage.removeItem("bookingActivity");
                         sessionStorage.removeItem("bookingSlot");
-                        setOrders([]);
                         setBookingActivity(null);
                         setBookingSlot(null);
                       }}
