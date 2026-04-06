@@ -110,9 +110,10 @@ const styles = `
 
   .home-btn-secondary {
     padding: 15px 22px;
-    background: #fffaf3;
-    border: 1px solid var(--line);
+    background: var(--text);
+    border: 2px solid var(--text);
     border-radius: 16px;
+    color: #faf8f5;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
@@ -120,7 +121,8 @@ const styles = `
   }
 
   .home-btn-secondary:hover {
-    background: #f6eee2;
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
     transform: translateY(-1px);
   }
 
