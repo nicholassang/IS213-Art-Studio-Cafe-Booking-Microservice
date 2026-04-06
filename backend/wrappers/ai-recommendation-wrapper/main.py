@@ -31,8 +31,8 @@ settings = Settings()
 
 groq_client = AsyncGroq(
     api_key=settings.groq_api_key,
-    timeout=1.0,
-    max_retries=0,
+    timeout=30.0,
+    max_retries=2,
 )
 gemini_client = None
 if settings.gemini_api_key:
