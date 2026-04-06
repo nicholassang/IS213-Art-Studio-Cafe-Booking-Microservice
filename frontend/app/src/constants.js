@@ -1,7 +1,7 @@
 // constants.js
 // Shared across quiz frontend components
 
-export const API_GATEWAY = "http://localhost:8000";
+export const API_GATEWAY = "/api";
 
 export const CATEGORY_LABELS = {
   food_and_drink: "Food & Drink",

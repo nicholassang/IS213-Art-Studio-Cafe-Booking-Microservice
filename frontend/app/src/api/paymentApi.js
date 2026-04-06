@@ -1,4 +1,4 @@
-const BACKEND_BASE = import.meta.env.VITE_BACKEND_BASE || "http://localhost:8007";
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_BASE || "/api";
 
 /**
  * Process a payment (with or without voucher)

@@ -202,7 +202,7 @@ export default function SavedExperiences() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`http://localhost:8000/saved-experiences/${userName}`)
+    fetch(`/api/saved-experiences/${userName}`)
       .then((res) => res.json())
       .then((data) => {
         setActivities(data.activities || []);

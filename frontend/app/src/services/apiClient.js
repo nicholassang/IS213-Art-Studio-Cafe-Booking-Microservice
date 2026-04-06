@@ -3,7 +3,7 @@ import axios from "axios";
 const apiClient = axios.create({
   // use the same host name the browser actually uses, not 127.0.0.1
   // avoiding a different hostname keeps the session cookie in the "same-site" scope
-  baseURL: "http://localhost:8000",
+  baseURL: "/api",
   withCredentials: true,
 });
 

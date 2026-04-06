@@ -371,7 +371,7 @@ export default function ActivityDetail() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchActivity = fetch(`http://localhost:8000/activities/${id}`)
+    const fetchActivity = fetch(`/api/activities/${id}`)
       .then((res) => res.json())
       .then((data) => {
         setActivity(data);
@@ -382,7 +382,7 @@ export default function ActivityDetail() {
         setLoading(false);
       });
 
-    const fetchSavedStatus = fetch(`http://localhost:8000/saved-activities/${userName}/${id}`)
+    const fetchSavedStatus = fetch(`/api/saved-activities/${userName}/${id}`)
       .then((res) => res.json())
       .then((data) => {
         setSaved(data.saved);
@@ -419,7 +419,7 @@ export default function ActivityDetail() {
 
     try {
       if (!saved) {
-        const res = await fetch("http://localhost:8000/saved-activities", {
+        const res = await fetch("/api/saved-activities", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -439,7 +439,7 @@ export default function ActivityDetail() {
         setSaved(true);
         setMessage("Saved to your experiences ✨");
       } else {
-        const res = await fetch(`http://localhost:8000/saved-activities/${userName}/${id}`, {
+        const res = await fetch(`/api/saved-activities/${userName}/${id}`, {
           method: "DELETE",
         });
 
