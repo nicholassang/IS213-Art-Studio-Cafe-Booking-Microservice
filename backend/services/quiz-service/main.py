@@ -134,6 +134,7 @@ def _session_from_row(row: dict) -> dict:
         "user_id": row["user_id"],
         "questions": row["questions"],
         "answers": row.get("answers") or {},
+        "status": row.get("status", "active"),
     }
 
 
@@ -162,7 +163,7 @@ async def _save_answers(session_id: str, answers: dict[str, str]) -> None:
         raise HTTPException(status_code=500, detail="Failed to save answer.")
 
 
-async def _get_session_or_404(session_id: str) -> dict:
+async def _get_session_or_404(session_id: str, allow_submitted: bool = False) -> dict:
     _require_storage()
 
     try:
@@ -171,7 +172,7 @@ async def _get_session_or_404(session_id: str) -> dict:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT session_id, user_id, questions, answers
+                        SELECT session_id, user_id, questions, answers, status
                         FROM quiz_sessions
                         WHERE session_id = %s
                         LIMIT 1
@@ -182,7 +183,8 @@ async def _get_session_or_404(session_id: str) -> dict:
 
             if not row:
                 raise HTTPException(status_code=404, detail="Session not found.")
-
+            if not allow_submitted and row["status"] == "submitted":
+                raise HTTPException(status_code=409, detail="Session already submitted.")
             return _session_from_row(row)
 
         result = (
@@ -193,7 +195,11 @@ async def _get_session_or_404(session_id: str) -> dict:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Session not found.")
-        return _session_from_row(result.data[0])
+        row = result.data[0]
+        if not allow_submitted and row.get("status") == "submitted":
+            raise HTTPException(status_code=409, detail="Session already submitted.")
+        return _session_from_row(row)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -278,7 +284,7 @@ async def start_session(payload: SessionStart):
 
 @app.get("/quiz/session/{session_id}", response_model=SessionOut, tags=["Quiz"])
 async def get_session(session_id: str):
-    session = await _get_session_or_404(session_id)
+    session = await _get_session_or_404(session_id, allow_submitted=True)
     return SessionOut(
         session_id=session_id,
         user_id=session["user_id"],
@@ -362,13 +368,36 @@ async def submit_session(session_id: str):
         if storage_backend == "postgres":
             with _connect_db() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("DELETE FROM quiz_sessions WHERE session_id = %s", (session_id,))
+                    cur.execute(
+                        """
+                        UPDATE quiz_sessions
+                        SET status = 'submitted', updated_at = %s
+                        WHERE session_id = %s AND status = 'active'
+                        RETURNING session_id
+                        """,
+                        (datetime.now(timezone.utc), session_id),
+                    )
+                    updated = cur.fetchone()
                 conn.commit()
+            if not updated:
+                raise HTTPException(status_code=409, detail="Session already submitted.")
         else:
-            supabase_client.table("quiz_sessions").delete().eq("session_id", session_id).execute()
-        logger.info(f"Session {session_id} deleted after submission")
+            result = (
+                supabase_client.table("quiz_sessions")
+                .update({"status": "submitted", "updated_at": _now_iso()})
+                .eq("session_id", session_id)
+                .eq("status", "active")
+                .execute()
+            )
+            if not result.data:
+                raise HTTPException(status_code=409, detail="Session already submitted.")
+
+        logger.info(f"Session {session_id} marked as submitted")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to delete session after submit: {e}")
+        logger.error(f"Failed to mark session as submitted: {e}")
+        raise HTTPException(status_code=500, detail="Failed to submit session.")
 
     answers_list = [
         {
@@ -381,7 +410,7 @@ async def submit_session(session_id: str):
     ]
 
     return {
-        "submission_id": str(uuid.uuid4()),
+        "submission_id": session_id,
         "user_id": session["user_id"],
         "submitted_at": _now_iso(),
         "answers": answers_list,

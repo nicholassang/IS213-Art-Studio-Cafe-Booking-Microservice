@@ -6,7 +6,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from prompts import SCORING_SYSTEM_PROMPT, build_profile_system_prompt
+from prompts import SCORING_SYSTEM_PROMPT, build_profile_system_prompt, sanitise_answer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -313,6 +313,10 @@ def _fetch_existing_result(submission_id: str) -> dict | None:
 @app.post("/recommend")
 async def recommend(request: RecommendRequest):
     logger.info(f"Processing recommendation for submission {request.submission_id}")
+
+    # Sanitize all raw answers before any AI calls or scoring
+    for answer in request.answers:
+        answer.answer_text = sanitise_answer(answer.answer_text)
 
     try:
         existing = _fetch_existing_result(request.submission_id)
