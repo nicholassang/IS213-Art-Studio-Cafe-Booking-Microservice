@@ -36,3 +36,6 @@ logs/
 
 # Keep env templates
 !**/.env.example
+
+# Test files
+./backend/test_e2e.py
